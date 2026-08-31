@@ -73,3 +73,63 @@ tables of the served woff2 files, and next/font's own TypeScript types, which no
 - Redirects use `permanent: true` (Next emits 308, which Google consolidates identically
   to a 301). Old RU home `/ru` and old RU about `/ru/o-nas` deliberately have NO redirect:
   they are unchanged paths and a self-redirect is an infinite loop.
+
+---
+
+# Wave 3 — QA & integration pass (closed and opened)
+
+Full evidence in `.agents/QA-REPORT.md`. Deployment runbook in `.agents/DEPLOY.md`.
+**Nothing has been deployed.**
+
+## Closed by this wave
+
+- **JSON-LD is rendered.** `LocalBusiness` + `WebSite` in the locale layout, `Service` on
+  every service detail page, `BreadcrumbList` on every page below a locale home. Validated
+  structurally against the built HTML: 81 nodes over 25 pages, no null/undefined member,
+  no fabricated field, every URL absolute and on-site.
+- **"No visual verification yet"** (wave 1, hand-off 3) is closed. Real Chromium, 25 pages
+  × 6 widths × 3 locales, plus Lighthouse mobile on 15 URLs and axe on 50 page-states.
+- **The logo/favicon/JSON-LD hand-off** from wave 2 is closed: `logo`, `image`, `og:image`
+  and every icon resolve as real 200s on both the Node and the Workers runtime.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+- **`subsets` in `src/lib/fonts.ts` is `["latin", "latin-ext"]`, and that is not a
+  regression of the Cyrillic hard constraint.** `next/font` emits an `@font-face` per
+  Google subset with its own `unicode-range` regardless of `subsets`; the list only
+  controls which get preloaded. `/ru` still renders in real Commissioner and Literata —
+  verified in a browser. `CyrillicIsStillOnOffer` in that file is the compile-time guard
+  that used to be implicit in the `subsets` list, and it was checked to fail typecheck.
+- **Literata ships without `axes: ["opsz"]`.** Worth 7 Lighthouse points and ~100 KB per
+  page. This is the one design decision this wave overrode on measured evidence; it is one
+  line to restore and the client may want it back. See QA-REPORT §"What still falls short".
+- **The hero card is `min(600px, 66vw)`, not `min(540px, 60vw)`.** It was widened because
+  the Russian h1 crossed its edge at every width from 768 up. Narrowing it again
+  reintroduces that. `hyphens: auto` is *not* the fix — it fights `text-wrap: balance`;
+  the QA report records both failed attempts so nobody re-derives them.
+
+## Still open
+
+1. **Font bytes are the entire performance gap.** 87–96 Lighthouse Performance, all of it
+   LCP, all of it 160–214 KB of preloaded webfont queued ahead of the hero image. The real
+   fix is a subsetted Literata self-hosted through `next/font/local`, with a guard so new
+   copy cannot introduce a glyph the subset lacks. `/ru` is worst (87) because it pays for
+   latin-ext it never draws — `next/font` cannot preload per locale.
+2. **The catch-all 404 is unstyled and its `og:image` says `localhost:3000`.** Next's
+   implicit `/_not-found` sits outside `src/app/[locale]/` so it never gets the layout's
+   `metadataBase`. Reachable only for paths the middleware matcher skips: `/api/*`,
+   `/_next/*`, and anything containing a dot (`/wp-login.php`). `/ro/nope` and `/nope` both
+   get the proper branded 404. Fix when `app/global-not-found.tsx` stabilises — do **not**
+   fix by broadening the middleware matcher, which means hand-maintaining an allowlist for
+   `robots.txt`, `sitemap.xml`, the icons and `/images/*`, and 404s the sitemap if it is
+   wrong.
+3. **Service-card `sizes` overstates the box by ~10%**, so some viewports fetch the 828w
+   file where 640w would do (~113 KiB across the page). Unscored by Lighthouse and off the
+   LCP path. Only worth doing with the real box measurements to hand.
+4. **The quote form still cannot deliver.** `RESEND_API_KEY` and `QUOTE_NOTIFY_EMAIL` are
+   unset, so every submission shows the honest "could not be sent, call us" panel and lands
+   in the server log as `[quote] UNDELIVERED`. DEPLOY.md step 4a. This is the top item on
+   the post-deploy smoke checklist.
+5. **Never tested:** real video playback (needs Stream credentials — only the unhappy path
+   is verified), real email delivery, the live domain/DNS/TLS, non-Chromium browsers, and a
+   real screen reader.
