@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "siteName": "Top Cleaning",
+    "title": "Top Cleaning",
+    "description": "Servicii profesionale de curățenie."
+  },
+  "nav": {
+    "skipToContent": "Sari la conținut",
+    "home": "Acasă",
+    "services": "Servicii",
+    "contact": "Contact"
+  },
+  "home": {
+    "heading": "Top Cleaning"
+  },
+  "footer": {
+    "rights": "Toate drepturile rezervate."
+  },
+  "notFound": {
+    "title": "Pagina nu a fost găsită",
+    "description": "Pagina căutată nu există.",
+    "backHome": "Înapoi la pagina principală"
+  }
+}

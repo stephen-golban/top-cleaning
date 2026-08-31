@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "siteName": "Top Cleaning",
+    "title": "Top Cleaning",
+    "description": "Professional cleaning services."
+  },
+  "nav": {
+    "skipToContent": "Skip to content",
+    "home": "Home",
+    "services": "Services",
+    "contact": "Contact"
+  },
+  "home": {
+    "heading": "Top Cleaning"
+  },
+  "footer": {
+    "rights": "All rights reserved."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page you are looking for does not exist.",
+    "backHome": "Back to home"
+  }
+}

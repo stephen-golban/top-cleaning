@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "siteName": "Top Cleaning",
+    "title": "Top Cleaning",
+    "description": "Профессиональные услуги уборки."
+  },
+  "nav": {
+    "skipToContent": "Перейти к содержимому",
+    "home": "Главная",
+    "services": "Услуги",
+    "contact": "Контакты"
+  },
+  "home": {
+    "heading": "Top Cleaning"
+  },
+  "footer": {
+    "rights": "Все права защищены."
+  },
+  "notFound": {
+    "title": "Страница не найдена",
+    "description": "Запрашиваемая страница не существует.",
+    "backHome": "Вернуться на главную"
+  }
+}

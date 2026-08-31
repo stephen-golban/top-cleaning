@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "top-cleaning",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  // NEXT_PUBLIC_SITE_URL is inlined by Next at build time, so it belongs in the
+  // build environment (.env / CI env), not in `vars` here — see .env.example.
+  //
+  // Cloudflare Stream credentials are secrets, not vars:
+  //   wrangler secret put CF_ACCOUNT_ID
+  //   wrangler secret put CF_STREAM_API_TOKEN
+  //   wrangler secret put CF_STREAM_SIGNING_KEY_ID
+  //   wrangler secret put CF_STREAM_SIGNING_KEY_PEM
+}
