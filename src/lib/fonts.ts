@@ -14,10 +14,40 @@ import { Commissioner, Literata } from "next/font/google";
  * subsets, using the real strings `Curățenie după reparație` and
  * `Уборка после ремонта`.
  *
- * `subsets` is therefore not decoration: dropping `cyrillic` here silently
- * breaks `/ru`. If a family ever stops advertising `cyrillic`, `next/font`'s
- * generated types will fail `pnpm typecheck` rather than fail quietly.
+ * `subsets` is therefore not decoration — but it does not mean what its name
+ * suggests. It controls which subsets get a `<link rel="preload">`, not which
+ * `@font-face` blocks exist: `next/font` emits every subset Google publishes
+ * (latin, latin-ext, greek, cyrillic, cyrillic-ext, vietnamese) with its own
+ * `unicode-range`, whatever `subsets` says. Russian therefore still renders in
+ * real Commissioner and Literata with `subsets: ["latin", "latin-ext"]` below;
+ * the Cyrillic file is simply fetched when the first Cyrillic glyph is laid
+ * out rather than preloaded on every page in every language.
+ *
+ * That distinction is worth 54 KB on the critical path of every RO and EN page
+ * — Cyrillic they never draw a glyph from — and 72 KB of Latin Extended on
+ * every RU page. See `.agents/QA-REPORT.md` for the measured effect.
+ *
+ * `CyrillicIsStillOnOffer` below keeps the guarantee the `subsets` list used to
+ * carry implicitly: if either family ever stops publishing Cyrillic,
+ * `pnpm typecheck` fails instead of `/ru` quietly rendering in Georgia.
  */
+
+/** The subset names a `next/font/google` family accepts. */
+type SubsetsOf<F extends (options: never) => unknown> = NonNullable<
+  NonNullable<Parameters<F>[0]>["subsets"]
+>[number];
+
+type Assert<T extends true> = T;
+
+/**
+ * The HARD CONSTRAINT from `.agents/DECISIONS.md`, as a compile-time check:
+ * both families must still publish a Cyrillic subset, or `/ru` regresses to
+ * the fallback-font bug the old site shipped.
+ */
+export type CyrillicIsStillOnOffer = [
+  Assert<"cyrillic" extends SubsetsOf<typeof Commissioner> ? true : false>,
+  Assert<"cyrillic" extends SubsetsOf<typeof Literata> ? true : false>,
+];
 
 /*
  * The fallback stacks below are written out at each call site rather than
@@ -38,7 +68,7 @@ import { Commissioner, Literata } from "next/font/google";
  * rather than auto-extended.
  */
 export const sans = Commissioner({
-  subsets: ["latin", "latin-ext", "cyrillic"],
+  subsets: ["latin", "latin-ext"],
   display: "swap",
   variable: "--font-sans-face",
   preload: true,
@@ -64,8 +94,7 @@ export const sans = Commissioner({
  * optical-size behaviour instead of scaling one text design up to display size.
  */
 export const serif = Literata({
-  subsets: ["latin", "latin-ext", "cyrillic"],
-  axes: ["opsz"],
+  subsets: ["latin", "latin-ext"],
   display: "swap",
   variable: "--font-serif-face",
   preload: true,
