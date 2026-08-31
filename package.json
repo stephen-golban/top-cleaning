@@ -13,11 +13,16 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs --test \"src/**/*.test.mts\"",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "video:token": "node scripts/new-video-token.mjs",
+    "video:qr": "node scripts/make-qr.mjs",
+    "video:stream": "node --experimental-strip-types scripts/stream.mjs"
   },
   "dependencies": {
     "next": "15.5.24",
@@ -37,6 +42,7 @@
     "postcss": "8.5.26",
     "prettier": "3.9.6",
     "prettier-plugin-tailwindcss": "0.8.1",
+    "qrcode": "1.5.4",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",

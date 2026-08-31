@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          ".agents/design-preview.html"
+        ],
+        "createdAt": "2026-08-31T18:23:58.585Z",
+        "reason": "Claude's call: the animated max-width is the Desktop/Telefon toggle in a pitch deck — the resizing viewport IS the thing being demonstrated, so transform would defeat the purpose. One element, user-initiated on click, not scroll-linked. Preview fixture only; no production code affected."
+      }
+    ]
+  }
+}

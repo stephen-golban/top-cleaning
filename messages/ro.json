@@ -1,24 +1,206 @@
 {
   "meta": {
     "siteName": "Top Cleaning",
-    "title": "Top Cleaning",
-    "description": "Servicii profesionale de curățenie."
+    "title": "Top Cleaning — Servicii profesionale de curățenie în Chișinău",
+    "description": "Servicii de curățenie pentru locuințe și birouri în Chișinău.",
+    "home": {
+      "title": "Servicii profesionale de curățenie în Chișinău",
+      "description": "Oferim servicii de curățenie profesionale în Chișinău, adaptate nevoilor tale. Economisește timp și bucură-te de un mediu curat și sănătos."
+    },
+    "services": {
+      "title": "Servicii de curățenie pentru locuințe și birouri în Chișinău",
+      "description": "Curățenie generală, curățenie de întreținere, curățenie după reparație și curățarea chimică a mobilierului tapițat. Vezi ce include fiecare serviciu și cere o ofertă."
+    },
+    "about": {
+      "title": "Despre noi",
+      "description": "Cine suntem și cum lucrăm: o echipă instruită de curățenie din Chișinău, cu echipamente proprii și o abordare adaptată fiecărei locuințe sau birou."
+    },
+    "contact": {
+      "title": "Contact",
+      "description": "Sună la 079 022 023, scrie pe WhatsApp sau Viber, ori trimite o cerere online. Revenim cu o ofertă pentru curățenie în Chișinău."
+    },
+    "notFound": {
+      "title": "Pagina nu a fost găsită",
+      "description": "Pagina căutată nu există sau a fost mutată. Întoarce-te la pagina principală sau vezi serviciile noastre."
+    },
+    "service": {
+      "general": {
+        "title": "Curățenie generală în Chișinău",
+        "description": "Curățenie profundă pentru locuință sau birou: bucătărie, baie, mobilier, podele și suprafețe de sticlă. Vezi lista completă a operațiunilor incluse și cere o ofertă."
+      },
+      "maintenance": {
+        "title": "Curățenie de întreținere în Chișinău",
+        "description": "Curățenie regulată, săptămânal sau la un interval stabilit de tine, pentru locuințe și birouri. Vezi ce include fiecare vizită și cere o ofertă."
+      },
+      "afterRenovation": {
+        "title": "Curățenie după reparație în Chișinău",
+        "description": "Îndepărtăm praful de construcție, resturile de vopsea și de adeziv fără a deteriora finisajele noi. Vezi lista completă a lucrărilor și cere o ofertă."
+      },
+      "upholstery": {
+        "title": "Curățarea chimică a mobilierului tapițat în Chișinău",
+        "description": "Curățare prin injecție-extracție pentru canapele, fotolii, scaune și covoare. Îndepărtăm petele și praful acumulat în țesătură. Cere o ofertă."
+      }
+    }
   },
   "nav": {
     "skipToContent": "Sari la conținut",
-    "home": "Acasă",
+    "primaryLabel": "Navigare principală",
+    "home": "Principala",
     "services": "Servicii",
-    "contact": "Contact"
+    "about": "Despre noi",
+    "contact": "Contact",
+    "openMenu": "Deschide meniul",
+    "closeMenu": "Închide meniul",
+    "callUs": "Sună-ne",
+    "menu": "Meniu"
   },
   "home": {
-    "heading": "Top Cleaning"
+    "heading": "Top Cleaning",
+    "hero": {
+      "title": "Servicii profesionale de curățenie",
+      "description": "Experiența și atenția noastră la detalii asigură un mediu curat și sănătos pentru tine și familia ta."
+    },
+    "services": {
+      "title": "Serviciile noastre",
+      "description": "Oferim o gamă variată de servicii de curățenie, astfel încât să rezolvăm toate necesitățile tale într-un singur loc.",
+      "cta": "Vezi toate serviciile"
+    },
+    "steps": {
+      "title": "Cum funcționează serviciile noastre?",
+      "description": "Câțiva pași simpli pentru a curăța locuința ta."
+    },
+    "contact": {
+      "title": "Ai nevoie de o ofertă?",
+      "description": "Spune-ne ce spațiu ai și de ce fel de curățenie ai nevoie. Revenim cu un preț exact."
+    }
+  },
+  "services": {
+    "title": "Serviciile noastre",
+    "lead": "Oferim următoarele servicii de curățenie:",
+    "description": "Oferim o gamă variată de servicii de curățenie, astfel încât să rezolvăm toate necesitățile tale într-un singur loc.",
+    "includes": "Serviciul include următoarele:",
+    "seeDetails": "Vezi detalii",
+    "allServices": "Toate serviciile",
+    "otherServices": "Alte servicii"
+  },
+  "about": {
+    "title": "Despre noi",
+    "eyebrow": "De ce noi",
+    "question": "De ce să alegeți serviciile noastre de curățenie?",
+    "body": "Noi suntem specializați în oferirea de servicii profesionale de curățenie, având o echipă dedicată de experți care își fac treaba cu pasiune și depășesc așteptările clienților. Am reușit să câștigăm încrederea clienților prin servicii de curățenie de calitate și atenția noastră la detalii.",
+    "points": {
+      "1": "Angajăm doar personal calificat și dedicat, trecând printr-un proces riguros de selecție, pentru a vă asigura cele mai bune servicii de curățenie.",
+      "2": "Vă economisim timpul prețios, preluând sarcina curățeniei și oferindu-vă mai mult timp liber pentru activitățile importante.",
+      "3": "Oferim curățenie de calitate, servicii personalizate și atenție la detalii, fie pentru domiciliu, fie pentru birouri."
+    },
+    "benefitsTitle": "Ce obții lucrând cu noi"
+  },
+  "contact": {
+    "title": "Contact",
+    "lead": "Sună, scrie pe WhatsApp sau Viber, ori lasă o cerere aici. Revenim cu o ofertă.",
+    "phoneLabel": "Telefon",
+    "whatsappLabel": "WhatsApp",
+    "viberLabel": "Viber",
+    "emailLabel": "Email",
+    "areaLabel": "Zona deservită",
+    "areaValue": "Chișinău — locuințe și birouri",
+    "formTitle": "Cere o ofertă",
+    "formLead": "Completează formularul și te contactăm."
+  },
+  "form": {
+    "name": {
+      "label": "Nume",
+      "placeholder": "Numele tău"
+    },
+    "phone": {
+      "label": "Telefon",
+      "placeholder": "079 000 000"
+    },
+    "email": {
+      "label": "Email",
+      "placeholder": "nume@exemplu.md"
+    },
+    "service": {
+      "label": "Serviciu",
+      "placeholder": "Alege un serviciu",
+      "other": "Altceva"
+    },
+    "message": {
+      "label": "Detalii",
+      "placeholder": "Tipul spațiului, suprafața aproximativă și când ai nevoie de noi."
+    },
+    "required": "obligatoriu",
+    "optional": "opțional",
+    "submit": "Trimite cererea",
+    "submitting": "Se trimite…",
+    "privacy": "Folosim datele lăsate aici doar ca să răspundem la cererea ta.",
+    "success": {
+      "title": "Cererea a fost trimisă.",
+      "description": "Revenim cu un răspuns la numărul lăsat. Dacă e urgent, sună la 079 022 023."
+    },
+    "error": {
+      "title": "Cererea nu a putut fi trimisă.",
+      "description": "Încearcă din nou sau sună-ne la 079 022 023."
+    },
+    "errors": {
+      "name": "Scrie-ți numele.",
+      "phone": "Avem nevoie de un număr de telefon ca să te putem contacta.",
+      "phoneFormat": "Numărul de telefon nu pare corect.",
+      "email": "Adresa de email nu pare corectă.",
+      "message": "Scrie câteva detalii despre ce ai nevoie.",
+      "generic": "Verifică câmpurile marcate și încearcă din nou."
+    }
   },
   "footer": {
-    "rights": "Toate drepturile rezervate."
+    "rights": "Toate drepturile rezervate.",
+    "navTitle": "Navigare",
+    "servicesTitle": "Serviciile noastre",
+    "contactTitle": "Contacte",
+    "copyright": "© {year} Top Cleaning",
+    "serviceArea": "Curățenie pentru locuințe și birouri în Chișinău."
+  },
+  "common": {
+    "brand": "Top Cleaning",
+    "cta": {
+      "quote": "Cere o ofertă",
+      "call": "Sună-ne",
+      "whatsapp": "Scrie pe WhatsApp",
+      "viber": "Scrie pe Viber",
+      "email": "Trimite un email"
+    },
+    "language": {
+      "label": "Limbă",
+      "ro": "Română",
+      "ru": "Русский",
+      "en": "English"
+    },
+    "alt": {
+      "hero": "Femeie aspirând podeaua din lemn într-un dormitor luminos, cu perdele albe și plante.",
+      "serviceGeneral": "Persoană cu mănuși galbene curățând o balustradă de lemn.",
+      "serviceMaintenance": "Femeie aspirând covorul lângă o canapea, într-o cameră luminoasă cu plante.",
+      "serviceAfterRenovation": "Bucătărie nouă, gri deschis, cu masă rotundă din lemn, după finalizarea reparației.",
+      "serviceUpholstery": "Canapea tapițată deschisă la culoare lângă o comodă din lemn, într-un living cu plante.",
+      "process": "Femeie urcând scările cu o ladă de curățenie și o mătură, într-un hol alb."
+    },
+    "city": "Chișinău"
+  },
+  "video": {
+    "badge": "Link privat",
+    "heading": "Video privat",
+    "clipNumber": "Videoclipul {number}",
+    "play": "Redă videoclipul",
+    "playlistTitle": "Videoclipuri",
+    "playerTitle": "Player video",
+    "privacyNote": "Această pagină este accesibilă doar prin linkul primit. Nu este indexată de motoarele de căutare și nu este listată nicăieri pe site.",
+    "invalid": {
+      "title": "Linkul nu mai este valabil",
+      "description": "Linkul pe care l-ai deschis nu mai funcționează sau nu a existat niciodată. Cere unul nou la 079 022 023.",
+      "backHome": "Înapoi la pagina principală"
+    }
   },
   "notFound": {
     "title": "Pagina nu a fost găsită",
-    "description": "Pagina căutată nu există.",
+    "description": "Pagina căutată nu există sau a fost mutată.",
     "backHome": "Înapoi la pagina principală"
   }
 }

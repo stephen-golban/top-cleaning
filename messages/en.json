@@ -1,24 +1,206 @@
 {
   "meta": {
     "siteName": "Top Cleaning",
-    "title": "Top Cleaning",
-    "description": "Professional cleaning services."
+    "title": "Top Cleaning — Professional cleaning services in Chișinău",
+    "description": "Cleaning services for homes and offices in Chișinău.",
+    "home": {
+      "title": "Professional cleaning services in Chișinău",
+      "description": "Cleaning for homes and offices in Chișinău, arranged around what your place actually needs. Deep cleans, regular visits, after-renovation clean-ups and upholstery cleaning."
+    },
+    "services": {
+      "title": "Cleaning services for homes and offices in Chișinău",
+      "description": "Four services: deep cleaning, regular cleaning, after-renovation cleaning and upholstery cleaning. See exactly what each one covers, then ask for a quote."
+    },
+    "about": {
+      "title": "About us",
+      "description": "Who we are and how we work: a trained cleaning team in Chișinău, our own equipment, and a plan shaped around your home or office."
+    },
+    "contact": {
+      "title": "Contact",
+      "description": "Call 079 022 023, message us on WhatsApp or Viber, or send the form. We come back with a quote for cleaning anywhere in Chișinău."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "description": "This page does not exist or has moved. Head back to the homepage or take a look at what we do."
+    },
+    "service": {
+      "general": {
+        "title": "Deep cleaning in Chișinău",
+        "description": "A full top-to-bottom clean for a home or office: kitchen, bathroom, furniture, floors and glass. See every operation the service covers and ask for a quote."
+      },
+      "maintenance": {
+        "title": "Regular cleaning in Chișinău",
+        "description": "Cleaning on a schedule you set — weekly, fortnightly or otherwise — for homes and offices. See what each visit covers and ask for a quote."
+      },
+      "afterRenovation": {
+        "title": "After-renovation cleaning in Chișinău",
+        "description": "We clear building dust, paint residue and adhesive without damaging new finishes. See the full list of work and ask for a quote."
+      },
+      "upholstery": {
+        "title": "Upholstery cleaning in Chișinău",
+        "description": "Hot-water extraction cleaning for sofas, armchairs, dining chairs and rugs. Stains lifted, embedded dust removed. Ask for a quote."
+      }
+    }
   },
   "nav": {
     "skipToContent": "Skip to content",
+    "primaryLabel": "Main navigation",
     "home": "Home",
     "services": "Services",
-    "contact": "Contact"
+    "about": "About us",
+    "contact": "Contact",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "callUs": "Call us",
+    "menu": "Menu"
   },
   "home": {
-    "heading": "Top Cleaning"
+    "heading": "Top Cleaning",
+    "hero": {
+      "title": "Professional cleaning services",
+      "description": "Experience and close attention to detail, so your home stays a clean and healthy place for you and your family."
+    },
+    "services": {
+      "title": "Our services",
+      "description": "A broad enough range of cleaning work that one call covers the whole list, rather than a different contractor for each job.",
+      "cta": "See all services"
+    },
+    "steps": {
+      "title": "How working with us goes",
+      "description": "Four simple steps between getting in touch and a clean home."
+    },
+    "contact": {
+      "title": "Need a quote?",
+      "description": "Tell us about the space and what needs doing. We come back with an exact price."
+    }
+  },
+  "services": {
+    "title": "Our services",
+    "lead": "The cleaning services we offer:",
+    "description": "A broad enough range of cleaning work that one call covers the whole list, rather than a different contractor for each job.",
+    "includes": "What this service includes:",
+    "seeDetails": "See details",
+    "allServices": "All services",
+    "otherServices": "Other services"
+  },
+  "about": {
+    "title": "About us",
+    "eyebrow": "Why us",
+    "question": "Why choose our cleaning services?",
+    "body": "Cleaning is the only thing we do, and we do it properly. The team is trained for the work, turns up when it said it would, and pays attention to the details that get skipped when a job is rushed. That attention is what earns a client's trust, and it is what we are judged on every visit.",
+    "points": {
+      "1": "We hire carefully and train before anyone works in a client's home, so the standard does not depend on who is on the job that day.",
+      "2": "We take the cleaning off your hands, which is hours a week back for whatever you would rather be doing.",
+      "3": "Homes and offices alike get the same standard of work, planned around the space rather than a fixed checklist."
+    },
+    "benefitsTitle": "What you get when you work with us"
+  },
+  "contact": {
+    "title": "Contact",
+    "lead": "Call, message us on WhatsApp or Viber, or leave a request here. We come back with a quote.",
+    "phoneLabel": "Phone",
+    "whatsappLabel": "WhatsApp",
+    "viberLabel": "Viber",
+    "emailLabel": "Email",
+    "areaLabel": "Where we work",
+    "areaValue": "Chișinău — homes and offices",
+    "formTitle": "Get a quote",
+    "formLead": "Fill in the form and we will get back to you."
+  },
+  "form": {
+    "name": {
+      "label": "Name",
+      "placeholder": "Your name"
+    },
+    "phone": {
+      "label": "Phone",
+      "placeholder": "079 000 000"
+    },
+    "email": {
+      "label": "Email",
+      "placeholder": "name@example.md"
+    },
+    "service": {
+      "label": "Service",
+      "placeholder": "Choose a service",
+      "other": "Something else"
+    },
+    "message": {
+      "label": "Details",
+      "placeholder": "Type of space, rough size, and when you need us."
+    },
+    "required": "required",
+    "optional": "optional",
+    "submit": "Send request",
+    "submitting": "Sending…",
+    "privacy": "We use what you enter here only to answer your request.",
+    "success": {
+      "title": "Request sent.",
+      "description": "We will get back to you on the number you left. If it is urgent, call 079 022 023."
+    },
+    "error": {
+      "title": "The request could not be sent.",
+      "description": "Try again, or call us on 079 022 023."
+    },
+    "errors": {
+      "name": "Please enter your name.",
+      "phone": "We need a phone number to get back to you.",
+      "phoneFormat": "That phone number does not look right.",
+      "email": "That email address does not look right.",
+      "message": "Tell us briefly what you need.",
+      "generic": "Check the highlighted fields and try again."
+    }
   },
   "footer": {
-    "rights": "All rights reserved."
+    "rights": "All rights reserved.",
+    "navTitle": "Navigation",
+    "servicesTitle": "Our services",
+    "contactTitle": "Contact",
+    "copyright": "© {year} Top Cleaning",
+    "serviceArea": "Cleaning for homes and offices in Chișinău."
+  },
+  "common": {
+    "brand": "Top Cleaning",
+    "cta": {
+      "quote": "Get a quote",
+      "call": "Call us",
+      "whatsapp": "Message on WhatsApp",
+      "viber": "Message on Viber",
+      "email": "Send an email"
+    },
+    "language": {
+      "label": "Language",
+      "ro": "Română",
+      "ru": "Русский",
+      "en": "English"
+    },
+    "alt": {
+      "hero": "A woman vacuuming a wooden floor in a bright bedroom with white curtains and plants.",
+      "serviceGeneral": "A person in yellow gloves cleaning a wooden handrail.",
+      "serviceMaintenance": "A woman vacuuming a rug beside a sofa in a bright room with plants.",
+      "serviceAfterRenovation": "A newly finished light-grey kitchen with a round wooden table after renovation.",
+      "serviceUpholstery": "A light upholstered sofa next to a wooden dresser in a living room with plants.",
+      "process": "A woman carrying a cleaning caddy and a broom up a staircase in a white hallway."
+    },
+    "city": "Chișinău"
+  },
+  "video": {
+    "badge": "Private link",
+    "heading": "Private video",
+    "clipNumber": "Video {number}",
+    "play": "Play video",
+    "playlistTitle": "Videos",
+    "playerTitle": "Video player",
+    "privacyNote": "This page is reachable only through the link you were sent. Search engines do not index it and it is not listed anywhere on the site.",
+    "invalid": {
+      "title": "This link is no longer valid",
+      "description": "The link you opened no longer works, or never existed. Ask for a new one on 079 022 023.",
+      "backHome": "Back to home"
+    }
   },
   "notFound": {
     "title": "Page not found",
-    "description": "The page you are looking for does not exist.",
+    "description": "The page you are looking for does not exist or has moved.",
     "backHome": "Back to home"
   }
 }
