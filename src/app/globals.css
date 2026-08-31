@@ -221,6 +221,10 @@
   h3,
   h4 {
     text-wrap: balance;
+    /* Backstop only. It costs nothing until a single word is wider than its
+       column, and then it keeps that word inside its box instead of letting it
+       cross the hero card's edge. */
+    overflow-wrap: break-word;
   }
 
   p {

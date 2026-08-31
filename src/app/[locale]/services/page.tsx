@@ -31,7 +31,12 @@ export async function generateMetadata({
     title: t("title"),
     description: t("description"),
     alternates: alternatesFor("/services", locale),
-    openGraph: openGraphFor("/services", locale, tMeta("siteName"), tMeta("ogImageAlt")),
+    openGraph: openGraphFor(
+      "/services",
+      locale,
+      tMeta("siteName"),
+      tMeta("ogImageAlt"),
+    ),
   };
 }
 

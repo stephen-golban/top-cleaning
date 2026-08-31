@@ -1,12 +1,7 @@
 import type { Metadata } from "next";
 import type { Service } from "@/content";
 import { getLocalizedPathnames, getPathname, type Href } from "@/i18n/navigation";
-import {
-  defaultLocale,
-  locales,
-  type Locale,
-  localeHtmlLang,
-} from "@/i18n/routing";
+import { defaultLocale, locales, type Locale, localeHtmlLang } from "@/i18n/routing";
 import { absoluteUrl } from "@/lib/site";
 
 /**
@@ -105,12 +100,7 @@ export function openGraphFor(
   siteName: string,
   imageAlt: string,
 ): Metadata["openGraph"] {
-  return openGraphFromPaths(
-    getLocalizedPathnames(href),
-    locale,
-    siteName,
-    imageAlt,
-  );
+  return openGraphFromPaths(getLocalizedPathnames(href), locale, siteName, imageAlt);
 }
 
 /**
