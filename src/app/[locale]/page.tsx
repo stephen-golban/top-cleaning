@@ -12,7 +12,7 @@ import {
 } from "@/components/sections";
 import { AppLink, ArrowRightIcon, Section, SectionHeader } from "@/components/ui";
 import { routing } from "@/i18n/routing";
-import { alternatesFor } from "./_lib/metadata";
+import { alternatesFor, openGraphFor } from "./_lib/metadata";
 
 type PageParams = { locale: string };
 
@@ -38,6 +38,7 @@ export async function generateMetadata({
     title: `${t("home.title")} — ${t("siteName")}`,
     description: t("home.description"),
     alternates: alternatesFor("/", locale),
+    openGraph: openGraphFor("/", locale, t("siteName"), t("ogImageAlt")),
   };
 }
 

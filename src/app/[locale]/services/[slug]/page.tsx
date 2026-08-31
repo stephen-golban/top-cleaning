@@ -10,9 +10,11 @@ import {
   type Service,
 } from "@/content";
 import { ContactCta, CtaRow, PageHeader, ServiceCards } from "@/components/sections";
+import { BreadcrumbListJsonLd, ServiceJsonLd } from "@/components/seo";
 import { AppLink, Heading, Section, SectionHeader } from "@/components/ui";
 import { routing, type Locale } from "@/i18n/routing";
-import { serviceAlternates } from "../../_lib/metadata";
+import { localeHomeUrl, routeCanonicalUrl } from "@/lib/seo/urls";
+import { serviceAlternates, serviceOpenGraph } from "../../_lib/metadata";
 
 type PageParams = { locale: string; slug: string };
 
@@ -41,11 +43,13 @@ export async function generateMetadata({
   if (!service) notFound();
 
   const t = await getTranslations({ locale, namespace: "meta.service" });
+  const tMeta = await getTranslations({ locale, namespace: "meta" });
 
   return {
     title: t(`${service.id}.title`),
     description: t(`${service.id}.description`),
     alternates: serviceAlternates(service, locale),
+    openGraph: serviceOpenGraph(service, locale, tMeta("siteName"), tMeta("ogImageAlt")),
   };
 }
 
@@ -76,12 +80,38 @@ export default async function ServiceDetailPage({
 function ServiceDetail({ service }: { service: Service }) {
   const locale = useLocale() as Locale;
   const t = useTranslations("services");
+  const tNav = useTranslations("nav");
+  const tCommon = useTranslations("common");
   const tAlt = useTranslations();
   const slot = imageSlots[service.image];
   const others = services.filter((item) => item.id !== service.id);
 
+  const servicesUrl = routeCanonicalUrl("/services", locale);
+  const canonicalUrl = routeCanonicalUrl(
+    { pathname: "/services/[slug]", params: { slug: service.slug[locale] } },
+    locale,
+  );
+
   return (
     <>
+      {/* `provider` here is a bare `@id` reference; the `LocalBusiness` node it
+          points at is rendered by the locale layout on this same page. */}
+      <ServiceJsonLd
+        locale={locale}
+        name={service.name[locale]}
+        description={service.summary[locale]}
+        url={canonicalUrl}
+        city={tCommon("city")}
+        imageUrl={slot.asset.src}
+      />
+      <BreadcrumbListJsonLd
+        items={[
+          { name: tNav("home"), url: localeHomeUrl(locale) },
+          { name: tNav("services"), url: servicesUrl },
+          { name: service.name[locale], url: canonicalUrl },
+        ]}
+      />
+
       <PageHeader
         slot={slot}
         alt={tAlt(slot.altKey)}

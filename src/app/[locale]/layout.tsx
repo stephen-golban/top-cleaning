@@ -10,6 +10,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { services } from "@/content";
 import { Footer, type FooterServiceLink } from "@/components/layout/footer";
 import { Header } from "@/components/layout/header";
+import { LocalBusinessJsonLd, WebSiteJsonLd } from "@/components/seo";
 import { localeDir, localeHtmlLang, routing, type Locale } from "@/i18n/routing";
 import { fontVariables } from "@/lib/fonts";
 import { siteUrlObject } from "@/lib/site";
@@ -75,6 +76,8 @@ export default async function LocaleLayout({
  */
 function Shell({ children }: { children: React.ReactNode }) {
   const t = useTranslations("nav");
+  const tMeta = useTranslations("meta");
+  const tCommon = useTranslations("common");
   const locale = useLocale() as Locale;
 
   // The footer's service column, resolved here rather than inside `Footer`:
@@ -87,6 +90,22 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {/* Site-wide structured data, rendered exactly once per page. Both nodes
+          carry stable `@id`s, so a `Service` node on a detail page can name its
+          provider by reference instead of restating the company. Emitting them
+          from the layout is what guarantees that reference always resolves. */}
+      <LocalBusinessJsonLd
+        locale={locale}
+        name={tMeta("siteName")}
+        city={tCommon("city")}
+        description={tMeta("description")}
+      />
+      <WebSiteJsonLd
+        locale={locale}
+        name={tMeta("siteName")}
+        description={tMeta("description")}
+      />
+
       <a
         href="#main"
         className="sr-only rounded-sm bg-accent-strong px-4 py-2 text-[0.9375rem] font-medium text-on-accent focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-[60]"
