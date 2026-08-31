@@ -73,7 +73,7 @@ export function PhotoHero({
           "relative border-t border-hairline bg-ground",
           "px-(--spacing-gutter) py-8",
           "min-[760px]:absolute min-[760px]:bottom-[clamp(24px,4vw,52px)] min-[760px]:left-[clamp(24px,4vw,52px)]",
-          "min-[760px]:max-w-[min(540px,60vw)] min-[760px]:rounded-sm min-[760px]:border-t-0",
+          "min-[760px]:max-w-[min(600px,66vw)] min-[760px]:rounded-sm min-[760px]:border-t-0",
           "min-[760px]:p-[clamp(22px,3.4vw,40px)] min-[760px]:shadow-card",
         )}
       >
