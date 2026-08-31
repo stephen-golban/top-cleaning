@@ -153,8 +153,12 @@ export function MobileMenu({ items, className }: MobileMenuProps) {
             </Button>
           </div>
 
+          {/* Named `menu`, not `primaryLabel`: the header's own <nav> already
+              carries that name and stays in the accessibility tree behind the
+              sheet, so reusing it puts two identically-named navigation
+              landmarks on the page (axe `landmark-unique`). */}
           <nav
-            aria-label={t("primaryLabel")}
+            aria-label={t("menu")}
             className="mx-auto w-full max-w-(--container-wide) px-(--spacing-gutter) pt-2"
           >
             <ul className="grid">
