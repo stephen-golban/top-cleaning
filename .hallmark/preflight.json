@@ -1,0 +1,11 @@
+{
+  "date": "2026-08-31",
+  "mode": "greenfield",
+  "framework": "Vinext / React / TypeScript",
+  "styling": "semantic CSS tokens in app/globals.css",
+  "fonts": ["Manrope", "Inter"],
+  "iconSystem": "Lucide",
+  "layout": "mobile-first Split Studio",
+  "motion": "CSS transitions with reduced-motion override",
+  "constraints": ["white background", "dark text", "Apple system blue accent", "bilingual RO/RU", "private unlisted video"]
+}
