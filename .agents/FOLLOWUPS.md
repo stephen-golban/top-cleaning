@@ -61,3 +61,15 @@ because neither ships Cyrillic:
 Karla was verified missing Cyrillic three ways (Google Fonts CSS API, unioned `cmap`
 tables of the served woff2 files, and next/font's own TypeScript types, which now make
 `subsets: ["cyrillic"]` on Karla a compile error). Do not reintroduce either face.
+
+## Wave 2 hand-off
+- **No logo file exists anywhere in `public/`.** The brand mark is an inline SVG React
+  component, so there is nothing a crawler, a social card, or a browser tab can fetch.
+  `LocalBusinessJsonLd` therefore omits `logo` by default and accepts an optional
+  `logoUrl`. Needs: a real logo file in `public/`, a favicon set, and the JSON-LD wired
+  to point at it. Owner: branding agent (wave 3).
+- JSON-LD `@type` is `LocalBusiness`, NOT `CleaningService` — the latter does not exist in
+  schema.org. Verified. Do not "fix" this.
+- Redirects use `permanent: true` (Next emits 308, which Google consolidates identically
+  to a 301). Old RU home `/ru` and old RU about `/ru/o-nas` deliberately have NO redirect:
+  they are unchanged paths and a self-redirect is an infinite loop.

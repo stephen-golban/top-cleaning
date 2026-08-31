@@ -19,24 +19,13 @@ import { Commissioner, Literata } from "next/font/google";
  * generated types will fail `pnpm typecheck` rather than fail quietly.
  */
 
-const SANS_FALLBACK = [
-  "-apple-system",
-  "BlinkMacSystemFont",
-  "Segoe UI",
-  "Roboto",
-  "Helvetica Neue",
-  "Arial",
-  "sans-serif",
-] as const;
-
-const SERIF_FALLBACK = [
-  "Iowan Old Style",
-  "Palatino Linotype",
-  "Palatino",
-  "Georgia",
-  "Times New Roman",
-  "serif",
-] as const;
+/*
+ * The fallback stacks below are written out at each call site rather than
+ * hoisted into a shared constant. `next/font` is a compile-time transform: it
+ * reads the options object out of the AST, so every value has to be a literal.
+ * A spread of a `const` array parses, type-checks and lints cleanly, then fails
+ * `next build` with "Unexpected spread".
+ */
 
 /**
  * Body / UI face.
@@ -53,7 +42,15 @@ export const sans = Commissioner({
   display: "swap",
   variable: "--font-sans-face",
   preload: true,
-  fallback: [...SANS_FALLBACK],
+  fallback: [
+    "-apple-system",
+    "BlinkMacSystemFont",
+    "Segoe UI",
+    "Roboto",
+    "Helvetica Neue",
+    "Arial",
+    "sans-serif",
+  ],
 });
 
 /**
@@ -72,7 +69,14 @@ export const serif = Literata({
   display: "swap",
   variable: "--font-serif-face",
   preload: true,
-  fallback: [...SERIF_FALLBACK],
+  fallback: [
+    "Iowan Old Style",
+    "Palatino Linotype",
+    "Palatino",
+    "Georgia",
+    "Times New Roman",
+    "serif",
+  ],
 });
 
 /** Applied together on `<html>`; both expose only CSS variables. */

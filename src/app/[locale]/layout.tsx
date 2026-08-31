@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { NextIntlClientProvider, hasLocale, useTranslations } from "next-intl";
+import {
+  NextIntlClientProvider,
+  hasLocale,
+  useLocale,
+  useTranslations,
+} from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { Footer } from "@/components/layout/footer";
+import { services } from "@/content";
+import { Footer, type FooterServiceLink } from "@/components/layout/footer";
 import { Header } from "@/components/layout/header";
-import { localeDir, localeHtmlLang, routing } from "@/i18n/routing";
+import { localeDir, localeHtmlLang, routing, type Locale } from "@/i18n/routing";
 import { fontVariables } from "@/lib/fonts";
 import { siteUrlObject } from "@/lib/site";
 import "../globals.css";
@@ -69,6 +75,15 @@ export default async function LocaleLayout({
  */
 function Shell({ children }: { children: React.ReactNode }) {
   const t = useTranslations("nav");
+  const locale = useLocale() as Locale;
+
+  // The footer's service column, resolved here rather than inside `Footer`:
+  // the shell is not allowed to know what the services are called or where they
+  // live, so the names and the localized slugs arrive from `@/content` as data.
+  const footerServices: FooterServiceLink[] = services.map((service) => ({
+    href: { pathname: "/services/[slug]", params: { slug: service.slug[locale] } },
+    label: service.name[locale],
+  }));
 
   return (
     <>
@@ -85,7 +100,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <Footer />
+      <Footer services={footerServices} />
     </>
   );
 }
