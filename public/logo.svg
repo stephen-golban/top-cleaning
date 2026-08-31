@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 64" role="img" aria-labelledby="title desc">
-  <title id="title">Top Cleaning</title>
-  <desc id="desc">Top Cleaning wordmark with a geometric TC shine mark</desc>
-  <path d="M43 16a20 20 0 1 0 0 32" fill="none" stroke="#0b1538" stroke-width="8" stroke-linecap="square"/>
-  <path d="M14 16h25M26.5 16v32" fill="none" stroke="#007aff" stroke-width="7" stroke-linecap="square"/>
-  <path d="m49 7 2.3 5.7L57 15l-5.7 2.3L49 23l-2.3-5.7L41 15l5.7-2.3L49 7Z" fill="#007aff"/>
-  <text x="78" y="36" fill="#0b1538" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="800" letter-spacing="1.4">TOP CLEANING</text>
-  <text x="79" y="52" fill="#44516c" font-family="Arial, Helvetica, sans-serif" font-size="10" font-weight="600" letter-spacing="2.1">CHIȘINĂU</text>
-</svg>
