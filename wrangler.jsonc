@@ -25,4 +25,12 @@
   //   wrangler secret put CF_STREAM_API_TOKEN
   //   wrangler secret put CF_STREAM_SIGNING_KEY_ID
   //   wrangler secret put CF_STREAM_SIGNING_KEY_PEM
+  //
+  // Quote-form delivery over Telegram. Both are required together; without them
+  // the form shows the "could not be sent" panel and logs `[quote] UNDELIVERED`.
+  // The chat id is not itself a secret, but it is put here rather than in `vars`
+  // so both halves of the configuration live in the same place:
+  //   wrangler secret put TELEGRAM_BOT_TOKEN
+  //   wrangler secret put TELEGRAM_CHAT_ID
+  // See .agents/telegram-setup.md.
 }

@@ -408,3 +408,89 @@ Worker version `b177851e-bf42-4996-8fc5-69859b5c25c7`. Full write-up:
   way, 93 → 90, and LCP rose ~0.4 s on both, which is the signature of network
   conditions rather than of this change: no redirect fires on either URL, and the only
   difference in those responses is 62 bytes of HSTS header. TTFB measured 0.16–0.25 s.
+
+---
+
+# Wave 8 — Telegram delivery for the quote form (closed and opened)
+
+Code only. **Not deployed**, deliberately: no Telegram secrets exist yet, so a deploy
+would ship a change with nothing to exercise it. The owner deploys after step 5 of
+`.agents/telegram-setup.md`.
+
+## Closed by this wave
+
+- **The quote form now has a delivery provider the client will actually configure.**
+  Telegram, over the Bot API's `sendMessage`, added as a second implementation of the
+  existing one-method `QuoteDelivery` interface in
+  `src/components/forms/quote/delivery.ts`. Plain `fetch`, no SDK, no `node:` builtins —
+  it runs on workerd unchanged. `action.ts`, `fields.ts` and `quote-form.tsx` are
+  untouched: the action still does not know a provider exists.
+- **Wave 5's "real email delivery was never tested" is now moot for the primary path.**
+  Email is no longer the plan. Resend stays in the file, unconfigured, as the fallback.
+- **The unhappy path is unchanged and is now covered by tests**, not just by reading:
+  no provider, a 4xx from Telegram, a `200` carrying `ok:false`, and an unreachable
+  Telegram all produce the same `[quote] UNDELIVERED …` log with the full submission and
+  the "could not be sent" panel. There is still no path to a false success.
+- **Owner-facing runbook**: `.agents/telegram-setup.md`, plus `pnpm telegram:chat-id`
+  (`scripts/telegram-chat-id.mjs`), which reads the token from `.env.local` so it is
+  never typed on a command line or pasted into a chat.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+- **Precedence is Telegram, then Resend, and it is fixed in code.** No
+  `QUOTE_DELIVERY=` switch: a third setting is a third thing to get wrong, and the
+  fallback the client understands is "delete the Telegram secrets". When both are
+  configured Telegram wins and no email is sent — sending both would double every
+  notification while doubling the ways a submission can half-fail.
+- **Both Telegram variables are required together.** `TELEGRAM_BOT_TOKEN` alone is not
+  a configured provider; it falls through to Resend, and then to the undelivered path.
+  The `missing` list names every absent variable from *both* providers, because "which
+  half did I forget" is the question that log line has to answer.
+- **HTML parse mode, not MarkdownV2.** MarkdownV2 requires escaping eighteen
+  characters, of which `.`, `-`, `(` and `)` appear in ordinary Romanian prose and in
+  every phone number a visitor types; one miss is a 400 and a lost job. HTML mode needs
+  exactly three (`&`, `<`, `>`), which is auditable. `"` is deliberately *not* escaped:
+  Telegram parses only `&amp; &lt; &gt; &quot;`, and outside a tag attribute — there are
+  none — `&quot;` would render literally.
+- **The visitor's number is sent as bare E.164 text, not as a `tel:` anchor.** Telegram's
+  servers auto-detect a `+`-prefixed international number into a tappable `phone_number`
+  entity, which is the one-tap callback this whole business runs on. A `tel:` href would
+  read better in source but Telegram only accepts a short allowlist of URL schemes in
+  anchors and 400s on the rest — trading a working call button for an undelivered
+  message. Do not "improve" this into a link without testing a real send first.
+- **Messages are clamped to 4096 UTF-16 code units without splitting an HTML entity.**
+  Escaping grows one character into five, so the form's own 2000-character details limit
+  can produce 10,000 units. A half-written `&am` is a parse error, i.e. a lost job, so
+  `clampEscapedHtml` backs off to the last complete entity and appends `[…text scurtat]`.
+- **Every string the provider throws goes through a redactor.** Telegram puts the bot
+  token in the request *path*, not a header, so any error quoting a URL quotes the
+  credential — including a `fetch` failure's `cause`, which is why the network-failure
+  branch re-throws a fresh `Error` with no `cause`.
+- **`createTelegramDelivery`'s third argument (`apiBase`) is a test seam.** It is not
+  read from the environment and has no production caller. It exists so the tests can
+  exercise the real `fetch` against a stub server on localhost.
+- **27 new tests** in `src/components/forms/quote/delivery.test.mts` (80 → 107): all
+  four env combinations plus the half-configured ones, hostile input (markdown
+  metacharacters, tag and entity injection, newlines, 2000 characters of `&`), the
+  4xx / `ok:false` / unreachable paths, and four separate assertions that the token
+  reaches neither an error message, a stack, the provider object, nor the message body.
+
+## Opened by this wave
+
+1. **Nothing is deployed and nothing has ever been sent.** The owner must produce two
+   things and only two: a **bot token** from `@BotFather`, and a **numeric chat id**
+   obtained by sending `/start` to the new bot and running `pnpm telegram:chat-id`.
+   Then `wrangler secret put TELEGRAM_BOT_TOKEN`, `wrangler secret put
+   TELEGRAM_CHAT_ID`, `pnpm deploy`, and a real submission end to end.
+2. **`079022023` is not a credential and cannot be one.** The owner supplied it as
+   "the Telegram number". A bot cannot address a message by phone number; delivery
+   requires the numeric chat id from the `/start` flow. That number is already the
+   public business number on the site. Recorded in `.agents/telegram-setup.md` so it
+   does not get re-litigated.
+3. **The `phone_number` auto-detection has not been observed on a real device.** It is
+   documented Telegram behaviour (`MessageEntity.type: "phone_number"`) and it is why
+   the number is sent bare, but the first real submission is the first proof. Step 6 of
+   the setup doc says to tap it. If it does not link, the fallback is not a `tel:`
+   anchor — it is `<code>` around the number, which is tap-to-copy in every client.
+4. **Wave 5 item 3 is now half-closed.** `RESEND_API_KEY` is still unset and will
+   probably stay that way. Stream credentials are still absent and unrelated.
