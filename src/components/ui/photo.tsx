@@ -1,3 +1,4 @@
+import ReactDOM from "react-dom";
 import type { ImageAsset, ImageSlot } from "@/content/images";
 import { cn } from "@/lib/cn";
 
@@ -45,6 +46,14 @@ const RATIO_LG: Record<PhotoRatio, string> = {
  * moment the hero stops being a 4:5 portrait box.
  */
 const MOBILE_MEDIA = "(max-width: 619.98px)";
+
+/**
+ * The complement of `MOBILE_MEDIA`. `<picture>` needs no such query — the last
+ * `<source>` wins by falling through — but a `<link rel="preload">` has no
+ * fall-through, so the two crops have to be told apart explicitly or the
+ * browser preloads both.
+ */
+const WIDE_MEDIA = "(min-width: 620px)";
 
 export type PhotoProps = {
   /**
@@ -170,6 +179,37 @@ export function Photo({
   imageClassName,
 }: PhotoProps) {
   const { asset, mobile, objectPosition } = slot;
+
+  // The LCP element on almost every page is this photograph, and the preload
+  // scanner only reaches the <picture> below after it has parsed the head. A
+  // preload puts the request in flight immediately instead.
+  //
+  // The `imageSrcSet` / `imageSizes` / `media` triple has to be *exactly* what
+  // the <picture> below resolves to, or the browser fetches two files instead
+  // of one: same AVIF candidate list, same `sizes`, and the same 620px art
+  // direction split — narrow gets the portrait crop, wide gets the landscape
+  // one. `type` keeps a client without AVIF from preloading a file it will not
+  // use; it simply falls through to the WebP <source> unpreloaded.
+  if (priority) {
+    if (mobile) {
+      ReactDOM.preload(mobile.src, {
+        as: "image",
+        type: "image/avif",
+        imageSrcSet: mobile.srcSet.avif,
+        imageSizes: mobileSizes,
+        media: MOBILE_MEDIA,
+        fetchPriority: "high",
+      });
+    }
+    ReactDOM.preload(asset.src, {
+      as: "image",
+      type: "image/avif",
+      imageSrcSet: asset.srcSet.avif,
+      imageSizes: sizes,
+      media: mobile ? WIDE_MEDIA : undefined,
+      fetchPriority: "high",
+    });
+  }
 
   return (
     <div
