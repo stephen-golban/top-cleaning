@@ -4,6 +4,12 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // The site is live at https://topcleaning.md (attached to this Worker as a Custom
+  // Domain). Turning the workers.dev subdomain off retires
+  // https://top-cleaning.ibeep.workers.dev, which was serving the whole site a second
+  // time under a second hostname — duplicate content and an unwanted public entry
+  // point. Custom Domains are unaffected by this flag.
+  "workers_dev": false,
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS",

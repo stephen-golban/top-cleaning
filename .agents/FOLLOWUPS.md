@@ -260,13 +260,65 @@ and 4 above are now historical. Full runbook and rollback procedure: `.agents/DE
    is the *entire* 8-point live SEO gap. It is also a content-licensing decision nobody
    on this project made. Dashboard → **AI Crawl Control** → **Robots.txt**. Needs zone
    settings write, which the deploy token does not have.
-2. **`https://top-cleaning.ibeep.workers.dev` still serves the whole site.** Canonicals
-   point at the apex so consolidation should happen, but `"workers_dev": false` in
-   `wrangler.jsonc` closes it properly if the staging URL is not wanted.
-3. **No production secrets are set** (`wrangler secret list` → `[]`). The quote form
-   cannot deliver and signed video playback cannot work. DEPLOY.md steps 4a and 4b.
+2. ~~**`https://top-cleaning.ibeep.workers.dev` still serves the whole site.**~~
+   **Closed by wave 6** — see below.
+3. **Production secrets are still incomplete.** `QUOTE_NOTIFY_EMAIL` is now set;
+   `RESEND_API_KEY` is not, so the quote form still cannot deliver, and no Stream
+   credentials exist, so signed video playback cannot work. DEPLOY.md steps 4a and 4b.
 4. **The DNS record list was never seen.** The token has `zone (read)` but not
    `#dns_records:read`, so `GET /zones/{id}/dns_records` fails. Both hostnames verifiably
    serve the Worker, but nobody has checked the zone for leftovers from the old site.
 5. **Still never tested**: real video playback, real email delivery, non-Chromium
    browsers, a real screen reader, and the quote form's happy path end to end.
+
+---
+
+# Wave 6 — retiring the workers.dev URL (closed and opened)
+
+One-line change, one redeploy. Worker version
+`e35e1570-bce1-4b99-a112-837ce67ff57c`. Full write-up: `.agents/DEPLOY.md`,
+section "The workers.dev URL".
+
+## Closed by this wave
+
+- **`https://top-cleaning.ibeep.workers.dev` no longer serves the site** (wave 5,
+  opened item 2). `"workers_dev": false` in `wrangler.jsonc`; the URL now returns
+  `HTTP/2 404`, `content-type: text/plain`, 17 bytes of `error code: 1042` —
+  Cloudflare's "no `workers.dev` route for this Worker". The apex is now the only
+  public way in.
+- **`topcleaning.md` is provably unaffected.** Re-verified after the deploy: all 24
+  sitemap URLs 200 and all on the apex, all three locale homepages, a service detail
+  page (RO diacritics intact), `/sitemap.xml` (24 URLs, zero `/v/`), `/robots.txt`
+  (`Host:`/`Sitemap:` on the apex, `Disallow: /v/` present), `/` → `/ro` (307),
+  `www` → apex (308, root and deep), the three legacy 308s, and canonical + all four
+  hreflang on the apex with no `localhost` and no `workers.dev` anywhere in the markup.
+- **Secrets survive a redeploy** — verified, not assumed: `wrangler secret list` still
+  shows `QUOTE_NOTIFY_EMAIL` after the deploy.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+- **`wrangler deploy` now prints `No targets deployed for top-cleaning`, and that is
+  fine.** With `workers_dev` off, `wrangler.jsonc` declares no routes at all — by
+  design (see DEPLOY.md "Things this file deliberately does not do"). The Custom
+  Domains live on Cloudflare's side and serve whatever the current deployment is.
+  Do not "fix" this by adding routes to the config; check
+  `wrangler deployments list` for a `(100%)` entry instead.
+- **Worker Preview URLs went with it** — they share the `workers.dev` subdomain.
+  If a staging URL is wanted later, `"preview_urls": true` gives per-version URLs
+  instead of one permanent public mirror of production. Turning `workers_dev` back
+  on is the wrong fix.
+- **A rollback does not restore the subdomain.** `workers_dev` is read from
+  `wrangler.jsonc` at deploy time, not stored in the Worker version, so genuinely
+  reopening it means editing the file and redeploying.
+
+## Observed, not changed
+
+- **`/v/<token>` unprefixed answers 307 → `/ro/v/<token>`, then 404.** The token is
+  preserved across the redirect, so printed QR codes still resolve, and the final
+  response carries `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet`,
+  `Referrer-Policy: no-referrer` and `<meta name="robots" content="noindex">`.
+  This is the i18n middleware's locale prefix and predates this wave — wave 5's
+  "clean 404" note just did not mention the hop. Nothing leaks either way.
+- **The `localhost:3000` `og:image` on the implicit `/_not-found`** (wave 3, still-open
+  item 2) is still there, and is still the *only* `localhost` string in the build.
+  Confirmed page by page: every locale route, the sitemap and robots.txt are clean.

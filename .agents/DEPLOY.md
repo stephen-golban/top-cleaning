@@ -25,7 +25,7 @@ Everything below is typed into that same window.
 | Zone | `topcleaning.md`, `680a1e763177ef5225c3c7623b978b6b`, **active** |
 | Live site | <https://topcleaning.md> (apex is canonical) |
 | Also serves | <https://www.topcleaning.md> → 308 → apex |
-| Preview URL | <https://top-cleaning.ibeep.workers.dev> (still public — see "Loose ends") |
+| Preview URL | none — `workers.dev` was turned off on 2026-09-01 (see "The workers.dev URL") |
 | Certificate | Google Trust Services `WE1`, issued by Cloudflare, auto-renewing |
 
 ---
@@ -127,7 +127,10 @@ below opens a prompt; type or paste the value there and press Enter. Nothing is 
 to your screen or your shell history. The Worker already exists, so none of these will
 ask to create it.
 
-**As of 2026-09-01 no secrets are set** — `npx wrangler secret list` prints `[]`.
+**As of 2026-09-01 exactly one secret is set** — `npx wrangler secret list` prints
+`QUOTE_NOTIFY_EMAIL`. `RESEND_API_KEY` is still missing, so the quote form still cannot
+deliver: it knows where to send, but not how. Secrets survive a redeploy — verified
+across the `workers_dev` deploy on 2026-09-01 — so you set them once.
 
 ### 4a. The quote form (do this, or the form cannot email anyone)
 
@@ -200,11 +203,24 @@ This runs `opennextjs-cloudflare build` then `opennextjs-cloudflare deploy`. It 
 couple of minutes and finishes with:
 
 ```
-  https://top-cleaning.ibeep.workers.dev
+Uploaded top-cleaning (14.89 sec)
+No targets deployed for top-cleaning (3.43 sec)
 Current Version ID: <uuid>
 ```
 
 **Write that version id down.** It is what you roll back to.
+
+> **`No targets deployed` is not an error and does not mean the deploy failed.** Since
+> `workers_dev` was turned off, `wrangler.jsonc` declares no routes at all — and it
+> deliberately does not (see "Things this file does not do"). The two hostnames are
+> **Custom Domains** attached on Cloudflare's side, and they always serve whichever
+> version is the current deployment, so the new version goes live on `topcleaning.md`
+> regardless of what that line says. Confirm with `npx wrangler deployments list` — the
+> newest entry should be `(100%)` — and by loading the real domain.
+>
+> You will also see: `Because your 'workers.dev' route is disabled and your
+> 'preview_urls' setting is not in your Wrangler file, Preview URLs will be disabled`.
+> That is the intended consequence of the change; leave it.
 
 > **If it fails with `assets-upload-session ... [code: 10013]`** — that is a Cloudflare
 > API 500, and it happened on the very first deploy on 2026-09-01. It is transient.
@@ -445,7 +461,15 @@ Known-good versions, for reference:
 | --- | --- | --- |
 | `cb1275f2-f587-45c9-a31c-938112d1fcc8` | 2026-09-01 10:33Z | first live deploy, no `www` redirect |
 | `f6c04047-cde0-4b31-9d9a-e3cd0c622572` | 2026-09-01 10:37Z | `www` redirect, **broken on the bare root** |
-| `5b65ca7c-48cd-4b5e-8cea-62f60f301799` | 2026-09-01 10:39Z | current; `www` redirect correct |
+| `5b65ca7c-48cd-4b5e-8cea-62f60f301799` | 2026-09-01 10:39Z | `www` redirect correct; `workers.dev` still public |
+| `185a1081-0b7c-4a99-adb1-35b734c73485` | 2026-09-01 10:46Z | same code; version cut by a `wrangler secret put` |
+| `e35e1570-bce1-4b99-a112-837ce67ff57c` | 2026-09-01 11:00Z | **current**; `workers_dev: false` — same code, `workers.dev` retired |
+
+If turning `workers.dev` off ever appears to break the live domain, `npx wrangler
+rollback 185a1081-0b7c-4a99-adb1-35b734c73485` returns to the last version that had the
+subdomain enabled. Note that a rollback restores the *Worker version*, not the account
+setting: `workers_dev` is read from `wrangler.jsonc` at deploy time, so to genuinely put
+the subdomain back you must also set it to `true` (or delete the line) and redeploy.
 
 ---
 
@@ -475,13 +499,42 @@ clears itself within the hour; to test before then, use
 
 ---
 
+## The workers.dev URL
+
+`https://top-cleaning.ibeep.workers.dev` used to serve the entire site alongside
+`topcleaning.md`. On **2026-09-01** it was retired, because a second public hostname
+serving the same pages is duplicate content and a second front door nobody asked for.
+
+How: `"workers_dev": false` in `wrangler.jsonc`, then a redeploy (version
+`e35e1570-bce1-4b99-a112-837ce67ff57c`). No DNS, no zone setting and no Custom Domain was
+touched — the flag only governs the `*.workers.dev` subdomain.
+
+What it returns now:
+
+```
+HTTP/2 404
+content-type: text/plain; charset=UTF-8
+content-length: 17
+
+error code: 1042
+```
+
+`1042` is Cloudflare's "the Worker has no `workers.dev` route" code. The site itself was
+verified unaffected in the same pass: all 24 sitemap URLs 200, all three locales, the
+`/` → `/ro` and `www` → apex redirects, `robots.txt`, `sitemap.xml`, the legacy 308s and
+the `/v/` 404 all behave exactly as before.
+
+**This also disables Worker Preview URLs**, which shared the same subdomain. If you ever
+want a staging URL back without reopening `workers.dev` to the public, add
+`"preview_urls": true` to `wrangler.jsonc` — that gives per-version URLs rather than one
+permanent public mirror of production.
+
+---
+
 ## Loose ends, as of 2026-09-01
 
-1. **`https://top-cleaning.ibeep.workers.dev` is still public** and serves the whole site.
-   Every page on it carries a canonical pointing at `topcleaning.md`, so search engines
-   will consolidate — but if you want it gone, add `"workers_dev": false` to
-   `wrangler.jsonc` and redeploy. It is useful as a staging URL, which is why it is
-   still there.
+1. ~~**`https://top-cleaning.ibeep.workers.dev` is still public**~~ **Closed
+   2026-09-01** — see "The workers.dev URL" below.
 2. **Cloudflare injects a managed `robots.txt` block** ahead of the site's own. It adds
    `Content-Signal: search=yes,ai-train=no,use=reference` and `Disallow: /` for ten AI
    crawlers (GPTBot, ClaudeBot, Google-Extended, CCBot, Bytespider, …). The site's own
@@ -491,7 +544,8 @@ clears itself within the hour; to test before then, use
    not 100. To change it: Cloudflare dashboard → the account → **AI Crawl Control** →
    **Robots.txt** → turn managed robots.txt off, or switch it to a policy you chose.
    This needs the dashboard; the deploying OAuth token cannot write zone settings.
-3. **No secrets are set.** The quote form cannot deliver and `/v/` cannot play video.
+3. **Only `QUOTE_NOTIFY_EMAIL` is set.** `RESEND_API_KEY` is still missing, so the quote
+   form still cannot deliver, and `/v/` cannot play video.
 4. **DNS records could not be enumerated** during the deploy — the OAuth token has
    `zone (read)` but not `#dns_records:read`, so `GET /zones/{id}/dns_records` returns
    `10000 Authentication error`. The zone was confirmed active and both hostnames were
