@@ -94,15 +94,12 @@ Full evidence in `.agents/QA-REPORT.md`. Deployment runbook in `.agents/DEPLOY.m
 
 ## Decisions this wave took, that a later wave should not silently undo
 
-- **`subsets` in `src/lib/fonts.ts` is `["latin", "latin-ext"]`, and that is not a
-  regression of the Cyrillic hard constraint.** `next/font` emits an `@font-face` per
-  Google subset with its own `unicode-range` regardless of `subsets`; the list only
-  controls which get preloaded. `/ru` still renders in real Commissioner and Literata —
-  verified in a browser. `CyrillicIsStillOnOffer` in that file is the compile-time guard
-  that used to be implicit in the `subsets` list, and it was checked to fail typecheck.
-- **Literata ships without `axes: ["opsz"]`.** Worth 7 Lighthouse points and ~100 KB per
-  page. This is the one design decision this wave overrode on measured evidence; it is one
-  line to restore and the client may want it back. See QA-REPORT §"What still falls short".
+- ~~**`subsets` in `src/lib/fonts.ts` is `["latin", "latin-ext"]`.**~~ **Superseded by
+  wave 4**: `next/font/google` is gone, and there is no `subsets` list any more. The
+  observation behind it still explains why the old setup was slow.
+- ~~**Literata ships without `axes: ["opsz"]`** — worth 7 Lighthouse points and ~100 KB
+  per page.~~ **Superseded by wave 4**: still off, but now pinned at `opsz` 14 (the value
+  Google served) and the axis costs 2–3 points and 32–50 KB, not 7 and 100.
 - **The hero card is `min(600px, 66vw)`, not `min(540px, 60vw)`.** It was widened because
   the Russian h1 crossed its edge at every width from 768 up. Narrowing it again
   reintroduces that. `hyphens: auto` is *not* the fix — it fights `text-wrap: balance`;
@@ -110,26 +107,104 @@ Full evidence in `.agents/QA-REPORT.md`. Deployment runbook in `.agents/DEPLOY.m
 
 ## Still open
 
-1. **Font bytes are the entire performance gap.** 87–96 Lighthouse Performance, all of it
-   LCP, all of it 160–214 KB of preloaded webfont queued ahead of the hero image. The real
-   fix is a subsetted Literata self-hosted through `next/font/local`, with a guard so new
-   copy cannot introduce a glyph the subset lacks. `/ru` is worst (87) because it pays for
-   latin-ext it never draws — `next/font` cannot preload per locale.
-2. **The catch-all 404 is unstyled and its `og:image` says `localhost:3000`.** Next's
-   implicit `/_not-found` sits outside `src/app/[locale]/` so it never gets the layout's
-   `metadataBase`. Reachable only for paths the middleware matcher skips: `/api/*`,
-   `/_next/*`, and anything containing a dot (`/wp-login.php`). `/ro/nope` and `/nope` both
-   get the proper branded 404. Fix when `app/global-not-found.tsx` stabilises — do **not**
-   fix by broadening the middleware matcher, which means hand-maintaining an allowlist for
-   `robots.txt`, `sitemap.xml`, the icons and `/images/*`, and 404s the sitemap if it is
-   wrong.
-3. **Service-card `sizes` overstates the box by ~10%**, so some viewports fetch the 828w
-   file where 640w would do (~113 KiB across the page). Unscored by Lighthouse and off the
-   LCP path. Only worth doing with the real box measurements to hand.
-4. **The quote form still cannot deliver.** `RESEND_API_KEY` and `QUOTE_NOTIFY_EMAIL` are
-   unset, so every submission shows the honest "could not be sent, call us" panel and lands
-   in the server log as `[quote] UNDELIVERED`. DEPLOY.md step 4a. This is the top item on
-   the post-deploy smoke checklist.
-5. **Never tested:** real video playback (needs Stream credentials — only the unhappy path
-   is verified), real email delivery, the live domain/DNS/TLS, non-Chromium browsers, and a
-   real screen reader.
+1. ~~**Font bytes are the entire performance gap.**~~ **Closed by wave 4** (see
+   below).
+2. **The catch-all 404 is unstyled and its `og:image` says `localhost:3000`.**
+   Next's implicit `/_not-found` sits outside `src/app/[locale]/` so it never gets
+   the layout's `metadataBase`. Reachable only for paths the middleware matcher
+   skips: `/api/*`, `/_next/*`, and anything containing a dot (`/wp-login.php`).
+   `/ro/nope` and `/nope` both get the proper branded 404. Do **not** fix by
+   broadening the middleware matcher, which means hand-maintaining an allowlist
+   for `robots.txt`, `sitemap.xml`, the icons and `/images/*`, and 404s the
+   sitemap if it is wrong. **And do not reach for `experimental.globalNotFound`
+   on Next 15.5.24 — wave 4 tried it and it turns every `notFound()` inside a
+   locale route into a 500** (`/ro/nope`, `/nope`, `/api/*`). Evidence and the
+   before/after route table are in QA-REPORT §"What still falls short" 4. Revisit
+   when the feature stabilises.
+3. ~~**Service-card `sizes` overstates the box by ~10%.**~~ Investigated in wave
+   4 and **there is nothing to fix**: `image-delivery-insight` compares the file
+   against the box's CSS width and ignores device pixel ratio, so it asks for a
+   370-wide file for a 370 CSS-px box on a DPR-1.75 screen. The box needs 648
+   device pixels; the `srcSet` offers 640 and 828; 828 is correct and stays
+   correct under any accurate `sizes`. The real lever is a ~660w derivative, which
+   belongs with the re-encode when the client's photographs replace the
+   placeholders.
+4. **The quote form still cannot deliver.** `RESEND_API_KEY` and
+   `QUOTE_NOTIFY_EMAIL` are unset, so every submission shows the honest "could not
+   be sent, call us" panel and lands in the server log as `[quote] UNDELIVERED`.
+   DEPLOY.md step 4a. This is the top item on the post-deploy smoke checklist.
+5. **Never tested:** real video playback (needs Stream credentials — only the
+   unhappy path is verified), real email delivery, the live domain/DNS/TLS,
+   non-Chromium browsers, and a real screen reader.
+
+---
+
+# Wave 4 — the font pass (closed and opened)
+
+Commits `98e20bf`, `8260a94`. Full evidence in QA-REPORT Part 4.
+**Nothing has been deployed.**
+
+## Closed by this wave
+
+- **Performance.** 87–94 → **93–97** on the same fifteen URLs, mean 90.7 → 95.7,
+  measured back to back on one machine. Accessibility, best practices and SEO stay
+  at 100 on all fifteen, CLS stays at a measured 0, TBT stays ≤ 10 ms, axe stays
+  at 0 violations over 25 pages × 2 viewports, and the 81 keyboard assertions all
+  still pass. FCP on every Russian page went 1.4 s → 0.9 s.
+- **Both faces are subsetted, self-hosted and preloaded per locale.** `/ro` and
+  `/en` preload 54,972 B of webfont where they used to preload 162,812 B; `/ru`
+  preloads 88,688 B and no longer chases a further 54,296 B of Cyrillic on demand.
+- **The LCP photograph is preloaded**, art direction included, verified to fetch
+  exactly one file.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+- **`next/font/google` is gone on purpose, and `next/font/local` was not the
+  replacement.** Both are import-time: they cannot preload per locale, and one
+  locale layout serves all three languages. `scripts/build-fonts.py` generates the
+  `@font-face` blocks and `src/app/[locale]/layout.tsx` emits the preloads, which
+  is the only way `/ro` avoids paying for Cyrillic and `/ru` avoids paying for
+  Latin Extended. Going back to `next/font` gives back 6 Lighthouse points.
+- **`public/fonts/*.woff2`, `src/app/fonts.generated.css` and
+  `src/lib/fonts.generated.ts` are generated and committed.** Never hand-edit
+  them: `pnpm test` fails if a woff2 stops matching the content hash in its own
+  filename, and `pnpm fonts:check` fails if the two generated files are stale.
+  Regenerate with `pnpm fonts:build` (needs `python3` with `fonttools` + `brotli`;
+  `pnpm build` does not).
+- **The Cyrillic hard constraint is now enforced in three places, not one:** the
+  compile-time guards in `src/lib/fonts.ts`, the whole-corpus check in
+  `src/lib/fonts.test.mts`, and — structurally — the fact that every
+  `unicode-range` is generated from the shipped file's own `cmap`, so a missing
+  glyph falls through to the system stack instead of rendering .notdef. Verified
+  in a real browser against the full upstream fonts: 149 characters, 0 failures.
+- **The font preloads carry `fetchpriority="low"`.** That is deliberate: it lets
+  the stylesheet and the LCP photograph take the bandwidth first while the font
+  requests still start immediately. Worth 3 points on `/ru`. Removing the
+  attribute puts the fonts back in front of the image; removing the preloads
+  entirely is worse than both.
+- **Literata's `opsz` axis is still off, but it is now `"opsz": 14` pinned rather
+  than "the default"** — 14 is what the Google Fonts API serves, found by matching
+  advance widths byte for byte, so the display cut did not change when
+  `next/font` left. Shipping the live axis now costs 2–3 points and 32–50 KB per
+  page (it used to cost 7 points and ~100 KB): one value in
+  `scripts/build-fonts.py`.
+
+## Opened by this wave
+
+1. **Static assets get `Cache-Control: public, max-age=0, must-revalidate` on
+   Cloudflare.** The ASSETS binding answers `/fonts/*`, `/images/*` and
+   `/_next/static/*` before the Worker runs, so the `headers()` rule in
+   `next.config.ts` only applies under `next start`. Everything is
+   content-hashed or immutable in practice, so a `public/_headers` file could set
+   a real `max-age` — but that is a site-wide caching decision and it was the same
+   before this wave (`next/font`'s own files had it too), so it was left alone.
+2. **`/ro` and `/en` still fetch `commissioner-cyrillic.woff2` lazily**, ~21 KB,
+   because the language switcher carries "Русский" in a `.sr-only` span. Not on
+   the critical path, not in Lighthouse's load window, and unchanged from before
+   the wave — but a screen reader does not need a webfont, so there is a cheap
+   21 KB there for anyone who wants it.
+3. **`scripts/build-fonts.py` pins the two upstream fonts by sha256** against
+   `raw.githubusercontent.com/google/fonts/main`, which is a moving branch. When
+   upstream cuts a release the script will refuse to build and print both hashes.
+   That is the intended behaviour — the metric-matched fallback overrides in that
+   file were derived from the current release — but somebody has to notice.
