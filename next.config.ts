@@ -82,6 +82,55 @@ const legacyRedirects = [
   { source: "/ru/uslugi-po-uborke/:slug", destination: "/ru/uslugi" },
 ] as const;
 
+/**
+ * `www.topcleaning.md` → `https://topcleaning.md`, one permanent hop.
+ *
+ * Both hostnames are attached to the Worker as Cloudflare Custom Domains, so
+ * both would otherwise serve the site and Google would see two copies of it.
+ * The canonical, hreflang and sitemap URLs are all built from
+ * `NEXT_PUBLIC_SITE_URL`, so the apex is the canonical host and `www` has to
+ * fold into it.
+ *
+ * This lives here rather than in a Cloudflare Redirect Rule because the
+ * deploying OAuth token has zone *read* only: the Rulesets API refuses to write
+ * (`10000 Authentication error`). Doing it in the app keeps the rule in version
+ * control and applies it identically on every host the Worker answers on.
+ *
+ * The host is derived from `NEXT_PUBLIC_SITE_URL` rather than hard-coded, so a
+ * staging deploy under another domain redirects its own `www`, and a local
+ * build produces a `www.localhost:3000` matcher that never fires.
+ *
+ * Static assets under `/_next/static`, `/fonts` and `/images` are answered by
+ * the Worker's ASSETS binding before any of this runs, so they still serve on
+ * `www`. That is harmless — none of them are indexable documents.
+ *
+ * Two rules, not one, and that is not tidiness. A single `/:path*` rule matches
+ * the bare root with `path` unset, and Next then emits the *literal* string
+ * `https://topcleaning.md/:path*` as the Location header — verified against the
+ * live deploy. `/:path+` requires at least one segment, so the root gets its own
+ * rule and every deeper path gets the wildcard.
+ */
+const canonicalHost = new URL(
+  process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+).host;
+
+const onWww = [{ type: "host" as const, value: `www.${canonicalHost}` }];
+
+const wwwToApex = [
+  {
+    source: "/",
+    has: onWww,
+    destination: `https://${canonicalHost}/`,
+    permanent: true,
+  },
+  {
+    source: "/:path+",
+    has: onWww,
+    destination: `https://${canonicalHost}/:path+`,
+    permanent: true,
+  },
+];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
@@ -98,7 +147,10 @@ const nextConfig: NextConfig = {
 
   // --- legacy URL migration (owned by the SEO feature; see the note above) ---
   async redirects() {
-    return legacyRedirects.map((redirect) => ({ ...redirect, permanent: true }));
+    return [
+      ...wwwToApex,
+      ...legacyRedirects.map((redirect) => ({ ...redirect, permanent: true })),
+    ];
   },
 
   // --- private video routes (owned by the video feature; see src/app/[locale]/v) ---

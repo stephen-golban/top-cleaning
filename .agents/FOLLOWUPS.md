@@ -208,3 +208,65 @@ Commits `98e20bf`, `8260a94`. Full evidence in QA-REPORT Part 4.
    upstream cuts a release the script will refuse to build and print both hashes.
    That is the intended behaviour — the metric-matched fallback overrides in that
    file were derived from the current release — but somebody has to notice.
+
+---
+
+# Wave 5 — the deploy (closed and opened)
+
+**The site is live at <https://topcleaning.md>.** Worker `top-cleaning`, version
+`5b65ca7c-48cd-4b5e-8cea-62f60f301799`. The "Nothing has been deployed" lines in waves 3
+and 4 above are now historical. Full runbook and rollback procedure: `.agents/DEPLOY.md`.
+
+## Closed by this wave
+
+- **The live domain, DNS and TLS** (wave 3 "Never tested", item 5). Zone
+  `topcleaning.md` was already active on the account; `topcleaning.md` and
+  `www.topcleaning.md` are attached to the Worker as Custom Domains, certificate from
+  Google Trust Services `WE1`. `www` folds into the apex with a 308.
+- **All 24 sitemap URLs return 200 on the real domain**, every one absolute and on
+  `https://topcleaning.md`. Zero `/v/` paths. Canonicals, all four hreflang alternates,
+  `og:url`, `og:image` and every JSON-LD URL resolve to the apex — no `localhost`, no
+  `workers.dev`, on any page checked.
+- **All 13 legacy redirects fire** (308) and land on a 200.
+- **`/v/<invalid>` is a clean 404 on the live domain**, with `noindex` in the markup and
+  `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` plus `Referrer-Policy:
+  no-referrer` on the response. Nothing about any video leaks.
+- **Live Lighthouse mobile**: `/ro` 94/100/100/92, `/ru` 93/100/100/92 (perf / a11y /
+  best practices / SEO), CLS 0 and TBT 0 ms on both. Local was 93–97 perf and 100 SEO;
+  the real-network LCP (2.9 s / 3.1 s) explains the perf delta and item 2 below explains
+  the whole of the SEO delta.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+- **`www` → apex is in `next.config.ts` (`wwwToApex`), not a Cloudflare Redirect Rule.**
+  The deploying OAuth token has zone *read* only and the Rulesets API refuses to write.
+  Keeping it in the app makes it version-controlled and derives the host from
+  `NEXT_PUBLIC_SITE_URL` instead of hard-coding it.
+- **It is two rules, not one.** A lone `/:path*` matches the bare root with `path` unset
+  and Next emits the literal string `https://topcleaning.md/:path*` as the `Location`
+  header — this shipped briefly in version `f6c04047` and was caught on the live domain.
+  `/:path+` cannot match zero segments, so `/` needs its own rule. Do not "simplify"
+  these back into one.
+- **`NEXT_PUBLIC_SITE_URL` is build-time.** It cannot be fixed with a `wrangler secret`
+  or a `vars` entry; a wrong value has to be rebuilt out. `.env.production` is
+  gitignored, so any new machine that deploys must recreate it.
+
+## Opened by this wave
+
+1. **Cloudflare injects a managed `robots.txt` block ahead of the site's own** — a
+   `Content-Signal:` directive and `Disallow: /` for ten AI crawlers. The site's own
+   `Disallow: /v/` group still applies (crawlers merge same-`User-agent` groups), but
+   Lighthouse does not recognise `Content-Signal:` and scores `robots.txt` invalid, which
+   is the *entire* 8-point live SEO gap. It is also a content-licensing decision nobody
+   on this project made. Dashboard → **AI Crawl Control** → **Robots.txt**. Needs zone
+   settings write, which the deploy token does not have.
+2. **`https://top-cleaning.ibeep.workers.dev` still serves the whole site.** Canonicals
+   point at the apex so consolidation should happen, but `"workers_dev": false` in
+   `wrangler.jsonc` closes it properly if the staging URL is not wanted.
+3. **No production secrets are set** (`wrangler secret list` → `[]`). The quote form
+   cannot deliver and signed video playback cannot work. DEPLOY.md steps 4a and 4b.
+4. **The DNS record list was never seen.** The token has `zone (read)` but not
+   `#dns_records:read`, so `GET /zones/{id}/dns_records` fails. Both hostnames verifiably
+   serve the Worker, but nobody has checked the zone for leftovers from the old site.
+5. **Still never tested**: real video playback, real email delivery, non-Chromium
+   browsers, a real screen reader, and the quote form's happy path end to end.
