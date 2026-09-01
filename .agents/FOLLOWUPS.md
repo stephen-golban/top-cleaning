@@ -322,3 +322,89 @@ section "The workers.dev URL".
 - **The `localhost:3000` `og:image` on the implicit `/_not-found`** (wave 3, still-open
   item 2) is still there, and is still the *only* `localhost` string in the build.
   Confirmed page by page: every locale route, the sitemap and robots.txt are clean.
+
+---
+
+# Wave 7 — HTTPS enforcement (closed and opened)
+
+Worker version `b177851e-bf42-4996-8fc5-69859b5c25c7`. Full write-up:
+`.agents/DEPLOY.md`, section "HTTPS and HSTS".
+
+## Closed by this wave
+
+- **`http://topcleaning.md` no longer serves the site in cleartext.** It served a
+  `200` with no upgrade and no HSTS until now; every quote-form submission over
+  that scheme was one hostile network away from being read in transit. Plain HTTP
+  now answers `308` to the HTTPS apex, preserving path, query string and locale
+  prefix. Verified live: `/` (2 hops to `https://…/ro`), `/ro/contact?x=1` (1 hop,
+  query intact), `www` over HTTP (1 hop — upgrade and `www` fold together),
+  `/despre-noi` (2 hops, legacy 308 still applies), `/sitemap.xml`, and a
+  nonexistent path.
+- **HSTS ships on HTTPS responses**, `max-age=31536000; includeSubDomains`, exactly
+  one header per response, and **not** on the cleartext redirect. Verified on `/`
+  (307), `/ro`, `/ru`, `/en`, `/ro/servicii`, `/robots.txt`, `/sitemap.xml` and the
+  `/v/` 404.
+- **The zone-level "Always Use HTTPS" was tried first and refused.**
+  `PATCH /zones/{id}/settings/always_use_https` → `10000 Authentication error`, as
+  does the matching `GET`. The deploying OAuth token has `zone (read)`, which does
+  not extend to zone settings. Still worth enabling later; now DEPLOY.md loose end 3.
+- **Nothing else moved.** Re-verified after the deploy: all 24 sitemap URLs `200`
+  and byte-identical to the pre-deploy list, `/` → `/ro`, `www` → apex, six legacy
+  308s including the catch-all, `robots.txt` (`Disallow: /v/`, `Host:`, `Sitemap:`
+  all on the apex), `sitemap.xml` (24 URLs, zero `/v/`), an invalid `/v/` token
+  still `404` with `X-Robots-Tag`, `Referrer-Policy: no-referrer` and its
+  no-store `Cache-Control`, and `wrangler secret list` still showing
+  `QUOTE_NOTIFY_EMAIL`.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+- **Every `has.value` in `next.config.ts` writes its own `^…$` anchors.** This is not
+  style. Next anchors the value for you (`new RegExp("^"+value+"$")`); OpenNext, which
+  is what actually runs on Cloudflare, does not (`new RegExp(value)`). An unanchored
+  `"http"` matches `https` in production and passes locally. That shipped as version
+  `399840ff` and put every HTTPS request into an infinite redirect to itself for about
+  four minutes. `src/lib/https.test.mts` asserts the patterns against both compilers.
+- **HSTS is set in two places on purpose.** OpenNext's `routingHandler` returns a
+  middleware result before merging `next.config.ts` headers, and
+  `https://topcleaning.md/` → `/ro` is such a result. Deleting either half leaves a
+  real hole; deleting the middleware half leaves it on the site's front door.
+- **`HSTS_HEADER` is lowercase on purpose.** The two layers merge in a plain
+  JavaScript object. A capitalised key in the config does not collide with the
+  middleware's normalised one, both survive, and the value ships doubled.
+- **No `preload`.** It is effectively irreversible — removal takes months and only
+  reaches a user when they update their browser — so it is the domain owner's call,
+  not a deploy script's. Adding it is one word in `HSTS_VALUE` (`src/lib/https.ts`)
+  plus a submission at <https://hstspreload.org>; do not add it without being asked.
+  Note the prerequisite: `includeSubDomains` must be, and is, true.
+- **`includeSubDomains` is safe only while `www` is the zone's only other hostname.**
+  Checked at the time: `www` is a Custom Domain on this same Worker, HTTPS-only, and
+  the `MX` records are Cloudflare Email Routing, which is not HTTP. Adding an
+  http-only subdomain later breaks it for a year per visitor.
+- **Verify on local workerd before deploying anything that touches routing.**
+  `npx wrangler dev --local` plus a spoofed `x-forwarded-proto` reproduces the
+  Cloudflare routing layer exactly, including both bugs above. It would have caught
+  the outage. The recipe is in DEPLOY.md.
+
+## Opened by this wave
+
+- **Two paths still answer on plain HTTP**, both because they are handled in front of
+  the Worker: static assets served by the ASSETS binding (`/favicon.ico`, `/logo.svg`,
+  `/images/*`, `/fonts/*`, `/_next/static/*`) and `/robots.txt`, which Cloudflare's
+  managed robots.txt intercepts. The robots.txt case is cosmetically odd — a `200`
+  carrying a stale `Location` header and only Cloudflare's managed block, without the
+  site's own `Disallow: /v/` and `Sitemap:` lines. No practical impact (crawlers read
+  the HTTPS copy, `/v/` is protected by `X-Robots-Tag` and unguessable tokens), and
+  both are fixed by the zone toggle rather than by more application code. Do not try to
+  dodge it with a path-exclusion regex in `redirects()`; the destination compiler
+  URL-encodes a single catch-all param's slashes, and the risk is another outage for a
+  documentation-level benefit.
+
+## Observed, not changed
+
+- **Live Lighthouse mobile on `/ro`** (7 runs): performance 91–96, median 91,
+  mean 92.0; accessibility 100, best practices 100, **SEO 100** (was 92 — Lighthouse
+  now accepts the `Content-Signal:` lines in Cloudflare's managed robots.txt). CLS 0,
+  TBT 0–10 ms throughout. The recorded pre-deploy figure was 94. `/ru` moved the same
+  way, 93 → 90, and LCP rose ~0.4 s on both, which is the signature of network
+  conditions rather than of this change: no redirect fires on either URL, and the only
+  difference in those responses is 62 bytes of HSTS header. TTFB measured 0.16–0.25 s.

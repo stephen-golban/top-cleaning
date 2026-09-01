@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 
+import {
+  CF_VISITOR_HEADER,
+  FORWARDED_PROTO_HEADER,
+  HSTS_HEADER,
+  HSTS_VALUE,
+  cfVisitorPattern,
+  forwardedProtoPattern,
+  type Scheme,
+} from "./src/lib/https";
+
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 /**
@@ -131,6 +141,100 @@ const wwwToApex = [
   },
 ];
 
+/**
+ * Plain HTTP → HTTPS, and HSTS once we are there.
+ *
+ * Cloudflare answers `topcleaning.md` on both :80 and :443, and until this
+ * existed the Worker happily served the whole site over cleartext with a 200 —
+ * no upgrade, no HSTS. Every form post, including the quote form, was one
+ * hostile network away from being read in transit.
+ *
+ * **Why this is in the app and not the "Always Use HTTPS" zone toggle.** That
+ * toggle is the textbook answer and it is still worth turning on (see
+ * `.agents/DEPLOY.md`), but the deploying OAuth token has zone *read* only:
+ * `PATCH /zones/{id}/settings/always_use_https` returns `10000 Authentication
+ * error`, and so does the matching GET. Doing it here has the same advantages
+ * the `wwwToApex` fold has — it is version-controlled, it travels with the
+ * Worker, and it cannot be silently undone by someone flipping a dashboard
+ * switch. The two are complementary, not alternatives.
+ *
+ * **Why `redirects()` and not `src/middleware.ts`.** Next runs
+ * `headers` → `redirects` → middleware, so a redirect here fires before
+ * next-intl ever looks at the pathname: the upgrade costs one hop instead of
+ * landing on a locale redirect first, and no `NEXT_LOCALE` cookie is minted on
+ * a response the browser is only going to throw away. It also reaches paths the
+ * middleware deliberately does not match — its matcher excludes anything with a
+ * dot, i.e. `/robots.txt` and `/sitemap.xml`.
+ *
+ * **How the original scheme is detected.** Not from `request.url`. Inside a
+ * Worker that reports `https:` whatever the client actually spoke, so trusting
+ * it would mean never redirecting. Cloudflare's edge tells us instead, via
+ * `x-forwarded-proto`, with `cf-visitor` as the fallback for the day it stops
+ * sending the first one. `missing` guards the fallback so exactly one of the
+ * two rules can ever match. The patterns and the escaping live in
+ * `src/lib/https.ts`, together with the reason they are **anchored** — the two
+ * matchers these strings pass through disagree about that, and getting it wrong
+ * takes the site down. Read that note before touching them.
+ *
+ * **This is why it stays off in development.** Neither header exists on
+ * `http://localhost:3000` under `pnpm dev`, nor on workerd under
+ * `pnpm preview`, so no rule matches and local HTTP keeps working. There is no
+ * `NODE_ENV` check because none is needed.
+ *
+ * The destination is the canonical host rather than the requesting one, so
+ * `http://www.topcleaning.md/x` upgrades *and* folds to the apex in a single
+ * hop. `https://www` is still handled by `wwwToApex` below. Two rules for the
+ * same reason `wwwToApex` needs two — see the note there.
+ *
+ * Next carries the query string over to the destination itself, so
+ * `?utm_source=…` survives the upgrade.
+ */
+const onScheme = (scheme: Scheme) => [
+  {
+    type: "header" as const,
+    key: FORWARDED_PROTO_HEADER,
+    value: forwardedProtoPattern(scheme),
+  },
+];
+
+const onCfVisitorScheme = (scheme: Scheme) => [
+  { type: "header" as const, key: CF_VISITOR_HEADER, value: cfVisitorPattern(scheme) },
+];
+
+/** Only consult `cf-visitor` when `x-forwarded-proto` is absent entirely. */
+const noForwardedProto = [{ type: "header" as const, key: FORWARDED_PROTO_HEADER }];
+
+const httpsRedirect = [
+  {
+    source: "/",
+    has: onScheme("http"),
+    destination: `https://${canonicalHost}/`,
+    permanent: true,
+  },
+  {
+    source: "/:path+",
+    has: onScheme("http"),
+    destination: `https://${canonicalHost}/:path+`,
+    permanent: true,
+  },
+  {
+    source: "/",
+    has: onCfVisitorScheme("http"),
+    missing: noForwardedProto,
+    destination: `https://${canonicalHost}/`,
+    permanent: true,
+  },
+  {
+    source: "/:path+",
+    has: onCfVisitorScheme("http"),
+    missing: noForwardedProto,
+    destination: `https://${canonicalHost}/:path+`,
+    permanent: true,
+  },
+];
+
+const hsts = [{ key: HSTS_HEADER, value: HSTS_VALUE }];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
@@ -148,6 +252,9 @@ const nextConfig: NextConfig = {
   // --- legacy URL migration (owned by the SEO feature; see the note above) ---
   async redirects() {
     return [
+      // Scheme first: it upgrades and folds `www` in one hop, and everything
+      // below can then assume https.
+      ...httpsRedirect,
       ...wwwToApex,
       ...legacyRedirects.map((redirect) => ({ ...redirect, permanent: true })),
     ];
@@ -164,6 +271,23 @@ const nextConfig: NextConfig = {
     ];
 
     return [
+      // --- HTTPS enforcement (site-wide; see the note above `httpsRedirect`) ---
+      // Header rules are additive rather than first-match, so these compose
+      // with the `/v/` rules below instead of replacing them.
+      //
+      // These do *not* reach a response OpenNext returns early — a config
+      // redirect or a next-intl locale redirect — because `routingHandler`
+      // returns before it merges them. For the cleartext 308 that is exactly
+      // what we want. For `https://topcleaning.md/` → `/ro` it is a gap, and
+      // `src/middleware.ts` closes it.
+      { source: "/:path*", has: onScheme("https"), headers: hsts },
+      {
+        source: "/:path*",
+        has: onCfVisitorScheme("https"),
+        missing: noForwardedProto,
+        headers: hsts,
+      },
+
       { source: "/v/:path*", headers: noIndex },
       { source: "/:locale(ro|ru|en)/v/:path*", headers: noIndex },
 

@@ -25,6 +25,8 @@ Everything below is typed into that same window.
 | Zone | `topcleaning.md`, `680a1e763177ef5225c3c7623b978b6b`, **active** |
 | Live site | <https://topcleaning.md> (apex is canonical) |
 | Also serves | <https://www.topcleaning.md> → 308 → apex |
+| Plain HTTP | 308 → HTTPS, in the app — see "HTTPS and HSTS" |
+| HSTS | `max-age=31536000; includeSubDomains`, no `preload` |
 | Preview URL | none — `workers.dev` was turned off on 2026-09-01 (see "The workers.dev URL") |
 | Certificate | Google Trust Services `WE1`, issued by Cloudflare, auto-renewing |
 
@@ -284,6 +286,9 @@ Work down this list in a browser on the real domain.
 - [ ] `https://topcleaning.md` loads and immediately becomes `https://topcleaning.md/ro`.
 - [ ] The padlock shows in the address bar (valid HTTPS certificate).
 - [ ] `https://www.topcleaning.md` redirects to the apex, including the bare root.
+- [ ] `http://topcleaning.md` (type the `http://` explicitly) lands on **https**.
+- [ ] A page over HTTPS carries `Strict-Transport-Security`, and the plain-HTTP
+      redirect does **not**. See "HTTPS and HSTS" for the one-liner that checks both.
 
 **All three languages**
 
@@ -463,7 +468,9 @@ Known-good versions, for reference:
 | `f6c04047-cde0-4b31-9d9a-e3cd0c622572` | 2026-09-01 10:37Z | `www` redirect, **broken on the bare root** |
 | `5b65ca7c-48cd-4b5e-8cea-62f60f301799` | 2026-09-01 10:39Z | `www` redirect correct; `workers.dev` still public |
 | `185a1081-0b7c-4a99-adb1-35b734c73485` | 2026-09-01 10:46Z | same code; version cut by a `wrangler secret put` |
-| `e35e1570-bce1-4b99-a112-837ce67ff57c` | 2026-09-01 11:00Z | **current**; `workers_dev: false` — same code, `workers.dev` retired |
+| `e35e1570-bce1-4b99-a112-837ce67ff57c` | 2026-09-01 11:00Z | `workers_dev: false` — `workers.dev` retired |
+| `399840ff-9b01-480f-8968-24c8c284dd82` | 2026-09-01 11:26Z | **do not deploy** — unanchored `has` pattern; every HTTPS request redirected to itself |
+| `b177851e-bf42-4996-8fc5-69859b5c25c7` | 2026-09-01 11:39Z | **current**; HTTP → HTTPS `308` + HSTS |
 
 If turning `workers.dev` off ever appears to break the live domain, `npx wrangler
 rollback 185a1081-0b7c-4a99-adb1-35b734c73485` returns to the last version that had the
@@ -531,6 +538,124 @@ permanent public mirror of production.
 
 ---
 
+## HTTPS and HSTS
+
+Until 2026-09-01 `http://topcleaning.md` served the whole site over cleartext with a
+`200` — no upgrade, no HSTS. Now:
+
+| Request | Response |
+| --- | --- |
+| `http://topcleaning.md/ro/contact?x=1` | `308` → `https://topcleaning.md/ro/contact?x=1` |
+| `http://www.topcleaning.md/ro` | `308` → `https://topcleaning.md/ro` (upgrade and `www` fold in one hop) |
+| any HTTPS response | `strict-transport-security: max-age=31536000; includeSubDomains` |
+| the plain-HTTP `308` itself | no HSTS — a browser must not be asked to trust a header it received in cleartext |
+
+### Where it lives, and why it is not the zone toggle
+
+The obvious answer is Cloudflare's **Always Use HTTPS** zone setting. The deploying
+OAuth token cannot write it, or even read it:
+
+```
+PATCH /zones/680a1e763177ef5225c3c7623b978b6b/settings/always_use_https
+{"success":false,"errors":[{"code":10000,"message":"Authentication error"}]}
+```
+
+The same `10000` comes back from the matching `GET`. The token carries `zone (read)`,
+which does not extend to zone settings — the same wall the `www` fold hit.
+
+So it is in the application, in two places, for two different reasons:
+
+- **`next.config.ts` → `redirects()`** does the `http` → `https` `308`. Next runs
+  `headers` → `redirects` → middleware, so this fires before next-intl looks at the
+  path: one hop instead of landing on a locale redirect first, no `NEXT_LOCALE` cookie
+  minted on a response the browser will throw away, and it reaches paths the middleware
+  matcher skips (anything with a dot, i.e. `/sitemap.xml`).
+- **`next.config.ts` → `headers()` *and* `src/middleware.ts`** both set HSTS, and both
+  are needed. OpenNext's `routingHandler` returns a middleware result *before* it merges
+  the headers from `next.config.ts`, and the site's most-visited URL —
+  `https://topcleaning.md/`, which redirects to `/ro` — is exactly such a result. Without
+  the middleware half it would be the one response on the site with no HSTS on it.
+
+The scheme itself comes from Cloudflare's `x-forwarded-proto`, with `cf-visitor` as a
+fallback. **Not** from `request.url`: inside a Worker that says `https:` whatever the
+browser actually spoke, so trusting it would mean never redirecting. Neither header
+exists under `pnpm dev` or `pnpm preview`, which is exactly why local plain HTTP keeps
+working with no `NODE_ENV` check anywhere.
+
+`src/lib/https.ts` holds the header names, the patterns and the HSTS value, so the
+declarative rules and the middleware cannot drift apart. `src/lib/https.test.mts` pins
+the behaviour.
+
+### The outage this caused, and the trap to avoid
+
+Version `399840ff-9b01-480f-8968-24c8c284dd82` put **every HTTPS request into an infinite
+redirect to itself** and was live for about four minutes before being rolled back to
+`e35e1570`. The cause is worth knowing before anyone writes another `has` rule:
+
+**Next and OpenNext compile `has.value` differently.**
+
+| | code | effect |
+| --- | --- | --- |
+| Next (`prepare-destination.js`) — `next dev`, `next start` | `new RegExp("^" + value + "$")` | anchored |
+| OpenNext (`@opennextjs/aws/.../routing/matcher.js`) — Cloudflare | `new RegExp(value)` | **substring** |
+
+An unanchored `value: "http"` therefore matches the header value `https` in production
+while behaving perfectly on a developer's machine. Every rule in this repo now writes its
+own anchors (`^http$`), which is correct under both: Next's wrapper turns it into
+`^^http$$`, and doubled zero-width anchors are harmless.
+
+Two more OpenNext behaviours that follow from the same file:
+
+- **`headers()` never reaches a redirect response.** `handleRedirects` returns before
+  `applyMiddlewareHeaders` runs. Convenient here — it is why the cleartext `308` cannot
+  accidentally carry HSTS — but it also means a `headers()` rule is not a way to
+  annotate a redirect.
+- **The two HSTS layers merge in a plain object, which is case-sensitive.** A
+  capitalised `Strict-Transport-Security` in the config does not collide with the
+  middleware's lowercase key; both survive and Cloudflare joins them into
+  `max-age=31536000; includeSubDomains, max-age=31536000; includeSubDomains`. Hence the
+  deliberately lowercase constant in `src/lib/https.ts`. **Reproduce this locally before
+  deploying** — `npx wrangler dev --local` plus a spoofed header shows all of it:
+
+```bash
+npx wrangler dev --port 8788 --local
+curl -sSD - -o /dev/null -H 'x-forwarded-proto: http'  http://127.0.0.1:8788/ro   # want 308
+curl -sSD - -o /dev/null -H 'x-forwarded-proto: https' http://127.0.0.1:8788/ro   # want 200 + one HSTS
+curl -sSD - -o /dev/null                               http://127.0.0.1:8788/ro   # want 200, no HSTS
+```
+
+### Two things still answer on plain HTTP
+
+Both sit in front of the Worker, so no amount of application code reaches them.
+
+- **Static assets** — `/favicon.ico`, `/logo.svg`, `/images/*`, `/fonts/*`,
+  `/_next/static/*`. The ASSETS binding answers before the Worker runs. Same reason they
+  also still serve on `www`; none of them are indexable documents.
+- **`/robots.txt`** — Cloudflare's managed robots.txt (see "Loose ends") intercepts this
+  one path. Over HTTP it now answers `200` with only Cloudflare's managed block, and
+  keeps the Worker's `Location` header on it — a `Location` on a `200` is ignored by
+  every client, so the effect is a robots.txt missing the site's own `Disallow: /v/` and
+  `Sitemap:` lines. Harmless in practice: crawlers read the HTTPS copy, which is
+  complete, `/v/` is protected by `X-Robots-Tag` and unguessable tokens anyway, and every
+  `http://` document URL 308s. Verified: `/sitemap.xml` and every other dotted path
+  redirect normally, so this is specific to Cloudflare's robots.txt feature.
+
+**Both would be covered by the zone toggle**, which runs earlier in the edge pipeline
+than either. That is the case for turning it on as defence in depth the moment a scoped
+token exists — see "Loose ends".
+
+### Checking it
+
+```bash
+IP=$(dig +short A topcleaning.md @1.1.1.1 | head -1)
+curl -sSD - -o /dev/null --resolve topcleaning.md:80:$IP  http://topcleaning.md/ro/contact?x=1
+curl -sSD - -o /dev/null --resolve topcleaning.md:443:$IP https://topcleaning.md/ro | grep -i strict
+```
+
+Use `--resolve`; this machine's resolver has a stale negative cache for the domain.
+
+---
+
 ## Loose ends, as of 2026-09-01
 
 1. ~~**`https://top-cleaning.ibeep.workers.dev` is still public**~~ **Closed
@@ -539,14 +664,25 @@ permanent public mirror of production.
    `Content-Signal: search=yes,ai-train=no,use=reference` and `Disallow: /` for ten AI
    crawlers (GPTBot, ClaudeBot, Google-Extended, CCBot, Bytespider, …). The site's own
    `Disallow: /v/` group still applies — crawlers merge groups with the same
-   `User-agent` — but Lighthouse scores `robots.txt` as invalid because it does not
-   recognise `Content-Signal:`, which is the entire reason the live SEO score is 92 and
-   not 100. To change it: Cloudflare dashboard → the account → **AI Crawl Control** →
+   `User-agent`. The live Lighthouse SEO score used to read 92 because Lighthouse did
+   not recognise `Content-Signal:`; as of 2026-09-01 it reads **100**, so that objection
+   is gone. What remains is that this feature also intercepts `/robots.txt` over plain
+   HTTP ahead of the Worker — see "HTTPS and HSTS", "Two things still answer on plain
+   HTTP". To change it: Cloudflare dashboard → the account → **AI Crawl Control** →
    **Robots.txt** → turn managed robots.txt off, or switch it to a policy you chose.
    This needs the dashboard; the deploying OAuth token cannot write zone settings.
-3. **Only `QUOTE_NOTIFY_EMAIL` is set.** `RESEND_API_KEY` is still missing, so the quote
+3. **"Always Use HTTPS" is still off at the zone level.** The redirect and HSTS are
+   enforced by the application instead (see "HTTPS and HSTS"), which covers every
+   document the Worker serves. The zone toggle is still worth turning on the day someone
+   has a token or a dashboard session: it runs earlier in the edge pipeline than the
+   Worker, so it also covers the two things the app cannot reach — static assets and
+   Cloudflare's managed `/robots.txt` — and it survives a bad deploy. Dashboard →
+   the zone → **SSL/TLS** → **Edge Certificates** → **Always Use HTTPS**. The two are
+   complementary; enabling it does not make the application rules redundant, because
+   those are the ones that live in version control.
+4. **Only `QUOTE_NOTIFY_EMAIL` is set.** `RESEND_API_KEY` is still missing, so the quote
    form still cannot deliver, and `/v/` cannot play video.
-4. **DNS records could not be enumerated** during the deploy — the OAuth token has
+5. **DNS records could not be enumerated** during the deploy — the OAuth token has
    `zone (read)` but not `#dns_records:read`, so `GET /zones/{id}/dns_records` returns
    `10000 Authentication error`. The zone was confirmed active and both hostnames were
    confirmed to serve the Worker over HTTPS, which is the outcome that matters, but
