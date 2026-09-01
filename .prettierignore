@@ -9,3 +9,9 @@ cloudflare-env.d.ts
 .claude
 .codex
 .impeccable
+
+# Written by scripts/build-fonts.py, byte-for-byte reproducibly.
+# `pnpm fonts:check` is what verifies these are current; prettier would only
+# fight the generator.
+src/app/fonts.generated.css
+src/lib/fonts.generated.ts

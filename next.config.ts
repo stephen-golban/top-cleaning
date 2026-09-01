@@ -84,6 +84,7 @@ const legacyRedirects = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+
   poweredByHeader: false,
   images: {
     formats: ["image/avif", "image/webp"],
@@ -113,6 +114,23 @@ const nextConfig: NextConfig = {
     return [
       { source: "/v/:path*", headers: noIndex },
       { source: "/:locale(ro|ru|en)/v/:path*", headers: noIndex },
+
+      // --- self-hosted webfonts (owned by scripts/build-fonts.py) ---
+      // Every filename under /fonts carries a content hash, so the bytes behind
+      // a URL never change and the response can be cached forever.
+      //
+      // This applies on the Node runtime (`next start`). On Cloudflare it does
+      // not: the ASSETS binding answers `/fonts/*` before the Worker runs, and
+      // it sets `public, max-age=0, must-revalidate` on *every* static asset —
+      // `/images/*` and `/_next/static/*` included, and `next/font`'s own files
+      // before this migration. Overriding that is a `public/_headers` file and
+      // a site-wide caching decision; see `.agents/FOLLOWUPS.md`.
+      {
+        source: "/fonts/:path*.woff2",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
     ];
   },
 };

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import ReactDOM from "react-dom";
 import {
   NextIntlClientProvider,
   hasLocale,
@@ -12,7 +13,7 @@ import { Footer, type FooterServiceLink } from "@/components/layout/footer";
 import { Header } from "@/components/layout/header";
 import { LocalBusinessJsonLd, WebSiteJsonLd } from "@/components/seo";
 import { localeDir, localeHtmlLang, routing, type Locale } from "@/i18n/routing";
-import { fontVariables } from "@/lib/fonts";
+import { fontPreloads } from "@/lib/fonts";
 import { siteUrlObject } from "@/lib/site";
 import "../globals.css";
 
@@ -54,11 +55,27 @@ export default async function LocaleLayout({
 
   setRequestLocale(locale);
 
+  // The whole point of hand-rolling the webfonts (see `src/lib/fonts.ts`): the
+  // preload list is decided here, where the locale is known, so `/ro` and `/en`
+  // never put a Cyrillic file on the critical path and `/ru` never puts Latin
+  // Extended on it. `next/font` decides this at import time and cannot.
+  //
+  // These run before the tree renders, so React emits them at the top of
+  // <head> — ahead of the stylesheet, which is what keeps them from queueing
+  // behind it.
+  for (const { href } of fontPreloads(locale)) {
+    ReactDOM.preload(href, {
+      as: "font",
+      type: "font/woff2",
+      crossOrigin: "anonymous",
+      fetchPriority: "low",
+    });
+  }
+
   return (
     <html
       lang={localeHtmlLang[locale]}
       dir={localeDir[locale]}
-      className={fontVariables}
       suppressHydrationWarning
     >
       <body className="flex min-h-dvh flex-col">

@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Self-hosted, subsetted Literata + Commissioner: the `@font-face` blocks with
+   their generated `unicode-range`s, the metric-matched fallbacks, and the
+   `--font-*-face` variables the `@theme` stacks below build on. Written by
+   `scripts/build-fonts.py`; see `src/lib/fonts.ts` for why they are not
+   `next/font/google`. */
+@import "./fonts.generated.css";
+
 /* ---------------------------------------------------------------------------
    Design tokens — Top Cleaning, Direction B ("Room").
 
@@ -14,9 +21,10 @@
 
 @theme {
   /* --- Typefaces --------------------------------------------------------
-     `--font-*-face` is written by `next/font` on <html> (see src/lib/fonts.ts).
-     The names are deliberately distinct from the Tailwind `--font-*` keys so
-     there is no self-referential var() cycle and the fallback stack survives.
+     `--font-*-face` is defined in `fonts.generated.css` and already ends in
+     the family's metric-matched fallback (see src/lib/fonts.ts). The names are
+     deliberately distinct from the Tailwind `--font-*` keys so there is no
+     self-referential var() cycle and the fallback stack survives.
      -------------------------------------------------------------------- */
   --font-sans:
     var(--font-sans-face), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,

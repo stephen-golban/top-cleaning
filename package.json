@@ -15,6 +15,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs --test \"src/**/*.test.mts\"",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "fonts:build": "python3 scripts/build-fonts.py",
+    "fonts:check": "python3 scripts/build-fonts.py --check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
