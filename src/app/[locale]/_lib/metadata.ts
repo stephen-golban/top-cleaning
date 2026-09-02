@@ -55,20 +55,28 @@ const ogLocale: Readonly<Record<Locale, string>> = Object.fromEntries(
  * the canonical identity of a shared link, and this site's links get shared on
  * exactly those.
  *
- * ## Why `images` has to be restated
+ * ## Why `images` is stated here, and why the file is in `public/`
  *
- * The branded card ships as `src/app/opengraph-image.png` — a file convention,
- * attached by Next at the *root* segment. Metadata objects are merged
- * shallowly and `openGraph` is replaced wholesale by the deepest segment that
- * declares one, so the moment a page sets `openGraph` at all, the root
- * segment's file-convention image disappears from the resolved card. Naming
- * the same file explicitly is what keeps the lockup on every share.
+ * The branded card is a plain static asset, `public/opengraph-image.png`, and
+ * every page names it explicitly through `BRANDED_OG_IMAGE`. It used to be
+ * `src/app/opengraph-image.png` — Next's *file convention* — and that had to
+ * change: a convention file at the root segment is attached to every route
+ * under it, including Next's implicit `/_not-found`, which sits outside
+ * `src/app/[locale]/` and therefore never sees this layout's `metadataBase`.
+ * The result was a catch-all 404 advertising
+ * `og:image: http://localhost:3000/opengraph-image.png` — the only `localhost`
+ * string in the whole build. Moving the file to `public/` removes the
+ * convention (so `/_not-found` now emits no `og:image` at all) while serving
+ * the same bytes at the same URL, `/opengraph-image.png`.
  *
- * The route Next generates for that file is served at `/opengraph-image.png`
- * (the `?<hash>` Next appends elsewhere is only a cache-buster), so pointing at
- * the plain path resolves to the same bytes. `src/app/opengraph-image.alt.txt`
- * stays as the English fallback for anything outside this layout — the pages
- * below pass their own localized alt from `meta.ogImageAlt`.
+ * The explicit restatement is needed regardless of where the file lives:
+ * metadata objects merge shallowly and `openGraph` is replaced wholesale by the
+ * deepest segment that declares one, so a page that sets `openGraph` at all
+ * would otherwise drop the card.
+ *
+ * The alt text is localized per page from `meta.ogImageAlt`; the English
+ * `opengraph-image.alt.txt` that backed the convention went with it, since a
+ * `public/` file has no alt-text sidecar and nothing was reading it.
  */
 const BRANDED_OG_IMAGE = {
   url: absoluteUrl("/opengraph-image.png"),
