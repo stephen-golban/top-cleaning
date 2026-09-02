@@ -109,18 +109,20 @@ Full evidence in `.agents/QA-REPORT.md`. Deployment runbook in `.agents/DEPLOY.m
 
 1. ~~**Font bytes are the entire performance gap.**~~ **Closed by wave 4** (see
    below).
-2. **The catch-all 404 is unstyled and its `og:image` says `localhost:3000`.**
-   Next's implicit `/_not-found` sits outside `src/app/[locale]/` so it never gets
-   the layout's `metadataBase`. Reachable only for paths the middleware matcher
-   skips: `/api/*`, `/_next/*`, and anything containing a dot (`/wp-login.php`).
-   `/ro/nope` and `/nope` both get the proper branded 404. Do **not** fix by
-   broadening the middleware matcher, which means hand-maintaining an allowlist
-   for `robots.txt`, `sitemap.xml`, the icons and `/images/*`, and 404s the
-   sitemap if it is wrong. **And do not reach for `experimental.globalNotFound`
-   on Next 15.5.24 — wave 4 tried it and it turns every `notFound()` inside a
-   locale route into a 500** (`/ro/nope`, `/nope`, `/api/*`). Evidence and the
-   before/after route table are in QA-REPORT §"What still falls short" 4. Revisit
-   when the feature stabilises.
+2. ~~**The catch-all 404 is unstyled and its `og:image` says `localhost:3000`.**~~
+   **Closed by wave 11**, and one sentence of this entry was simply false: it said
+   `/ro/nope` and `/nope` "both get the proper branded 404". They did not, live or
+   locally — see wave 11. The `localhost` `og:image` is gone (the share card moved
+   to `public/`, so the root file convention no longer attaches to `/_not-found`)
+   and every unmatched *in-locale* path now renders the branded 404 through a new
+   `[locale]/[...rest]` catch-all. Next's own `/_not-found` still answers dotted
+   paths, `/api/*` and `/_next/*`, and is still deliberately left alone: do **not**
+   broaden the middleware matcher, which means hand-maintaining an allowlist for
+   `robots.txt`, `sitemap.xml`, the icons and `/images/*`, and 404s the sitemap if
+   it is wrong. **And do not reach for `experimental.globalNotFound` on Next
+   15.5.24 — wave 4 tried it and it turns every `notFound()` inside a locale route
+   into a 500.** Evidence and the before/after route table are in QA-REPORT
+   §"What still falls short" 4.
 3. ~~**Service-card `sizes` overstates the box by ~10%.**~~ Investigated in wave
    4 and **there is nothing to fix**: `image-delivery-insight` compares the file
    against the box's CSS width and ignores device pixel ratio, so it asks for a
@@ -129,10 +131,10 @@ Full evidence in `.agents/QA-REPORT.md`. Deployment runbook in `.agents/DEPLOY.m
    correct under any accurate `sizes`. The real lever is a ~660w derivative, which
    belongs with the re-encode when the client's photographs replace the
    placeholders.
-4. **The quote form still cannot deliver.** `RESEND_API_KEY` and
-   `QUOTE_NOTIFY_EMAIL` are unset, so every submission shows the honest "could not
-   be sent, call us" panel and lands in the server log as `[quote] UNDELIVERED`.
-   DEPLOY.md step 4a. This is the top item on the post-deploy smoke checklist.
+4. ~~**The quote form still cannot deliver.**~~ **Closed 2026-09-02** — delivery
+   moved to Telegram and is verified end to end against the live form. Resend is an
+   unconfigured fallback and is expected to stay that way; nothing asks the owner to
+   set it up (rechecked in wave 11: `.env.example` and DEPLOY.md both now say so).
 5. ~~**Never tested:** real video playback (needs Stream credentials — only the
    unhappy path is verified)~~ **Closed 2026-09-02** — three videos are live behind one
    QR link, and playback is verified in a real browser per UID. Still never tested: real
@@ -192,18 +194,18 @@ Commits `98e20bf`, `8260a94`. Full evidence in QA-REPORT Part 4.
 
 ## Opened by this wave
 
-1. **Static assets get `Cache-Control: public, max-age=0, must-revalidate` on
-   Cloudflare.** The ASSETS binding answers `/fonts/*`, `/images/*` and
-   `/_next/static/*` before the Worker runs, so the `headers()` rule in
-   `next.config.ts` only applies under `next start`. Everything is
-   content-hashed or immutable in practice, so a `public/_headers` file could set
-   a real `max-age` — but that is a site-wide caching decision and it was the same
-   before this wave (`next/font`'s own files had it too), so it was left alone.
-2. **`/ro` and `/en` still fetch `commissioner-cyrillic.woff2` lazily**, ~21 KB,
-   because the language switcher carries "Русский" in a `.sr-only` span. Not on
-   the critical path, not in Lighthouse's load window, and unchanged from before
-   the wave — but a screen reader does not need a webfont, so there is a cheap
-   21 KB there for anyone who wants it.
+1. ~~**Static assets get `Cache-Control: public, max-age=0, must-revalidate` on
+   Cloudflare.**~~ **Closed by wave 11.** `public/_headers` now governs the ASSETS
+   binding: a year plus `immutable` for `/_next/static/*` and `/fonts/*`, one day
+   for everything that is name-addressed rather than content-hashed. Verified live.
+2. ~~**`/ro` and `/en` still fetch `commissioner-cyrillic.woff2` lazily**, ~21 KB,
+   because the language switcher carries "Русский" in a `.sr-only` span.~~
+   **Not true, and wave 11 measured it rather than reasoning about it.** They do not
+   fetch it — see wave 11, "Two things this file claimed that were not true". There
+   is no 21 KB there to save. The `.sr-only` span carries the *active* locale's
+   endonym, which on `/ro` is "Română"; the Russian string is only ever an
+   `aria-label`, which is not rendered text, plus a copy in the RSC flight
+   `<script>` payload. Neither makes a browser match a font.
 3. **`scripts/build-fonts.py` pins the two upstream fonts by sha256** against
    `raw.githubusercontent.com/google/fonts/main`, which is a moving branch. When
    upstream cuts a release the script will refuse to build and print both hashes.
@@ -263,15 +265,21 @@ and 4 above are now historical. Full runbook and rollback procedure: `.agents/DE
    settings write, which the deploy token does not have.
 2. ~~**`https://top-cleaning.ibeep.workers.dev` still serves the whole site.**~~
    **Closed by wave 6** — see below.
-3. **Production secrets are still incomplete.** `QUOTE_NOTIFY_EMAIL` is now set;
-   `RESEND_API_KEY` is not — though quote delivery moved to Telegram, which works. The
-   Stream half is **closed 2026-09-02**: all three `CF_STREAM_*` secrets are set and
-   signed playback works. DEPLOY.md step 4a is what remains.
-4. **The DNS record list was never seen.** The token has `zone (read)` but not
-   `#dns_records:read`, so `GET /zones/{id}/dns_records` fails. Both hostnames verifiably
-   serve the Worker, but nobody has checked the zone for leftovers from the old site.
-5. **Still never tested**: real email delivery, non-Chromium browsers, and a real screen
-   reader. ~~real video playback~~ closed 2026-09-02.
+3. ~~**Production secrets are still incomplete.**~~ **Closed.** Six secrets are set —
+   the three `CF_STREAM_*`, both Telegram halves, and `QUOTE_NOTIFY_EMAIL` — and both
+   features are verified live. `RESEND_API_KEY` is deliberately absent and is not a
+   gap: Telegram takes precedence over Resend anyway, so setting it would change
+   nothing. `CF_STREAM_API_TOKEN` and `CF_ACCOUNT_ID` are still absent and must stay
+   absent. Re-checked after the wave-11 deploy: the list is unchanged.
+4. ~~**The DNS record list was never seen.**~~ **Closed by wave 11.** Eight records,
+   all accounted for, nothing left over from the old site, nothing to delete. Full
+   table in `.agents/DEPLOY.md`, "Loose ends" item 5.
+5. **Still never tested**: non-Chromium browsers and a real screen reader.
+   ~~real video playback~~ closed 2026-09-02. ~~real email delivery~~ — no longer a
+   gap in the sense meant here: the quote form does not send email, and the one email
+   path that exists (Cloudflare Email Routing forwarding `info@`, `contact@`,
+   `oferte@`) was confirmed in wave 11 to have a **verified** destination, which is
+   the failure mode that would have made it silently drop mail.
 
 ---
 
@@ -389,7 +397,11 @@ Worker version `b177851e-bf42-4996-8fc5-69859b5c25c7`. Full write-up:
 
 ## Opened by this wave
 
-- **Two paths still answer on plain HTTP**, both because they are handled in front of
+- ~~**Two paths still answer on plain HTTP**~~ **Closed 2026-09-02** by the zone-level
+  **Always Use HTTPS**, which runs ahead of everything the Worker can reach and now
+  answers cleartext with a `301` (verified: `http://topcleaning.md/ro/contact?x=1`).
+  The description below is kept because it is why the app-level rules alone were never
+  going to be enough. Two paths used to answer on plain HTTP, both handled in front of
   the Worker: static assets served by the ASSETS binding (`/favicon.ico`, `/logo.svg`,
   `/images/*`, `/fonts/*`, `/_next/static/*`) and `/robots.txt`, which Cloudflare's
   managed robots.txt intercepts. The robots.txt case is cosmetically odd — a `200`
@@ -519,10 +531,9 @@ would ship a change with nothing to exercise it. The owner deploys after step 5 
    returned the success panel, which the server action only reaches when Telegram's
    `sendMessage` answers 2xx without `ok:false`. See "Token rotation, 2026-09-02" in
    `.agents/telegram-setup.md`.
-6. **`.env.example` still describes the old layout.** It predates the `.dev.vars` split
-   and should be reworked to say plainly that a `.env` file is build-time and public and
-   only `NEXT_PUBLIC_*` may live there. Cosmetic; the guard script enforces the rule
-   regardless of what the example says.
+6. ~~**`.env.example` still describes the old layout.**~~ **Closed.** It leads with the
+   where-does-each-value-go table, and wave 11 also made the Resend block say plainly
+   that it is optional and has never been configured — Telegram is the live path.
 
 ---
 
@@ -794,11 +805,11 @@ can watch them" was reason enough to burn the link.
    nothing the requester did not already type — but it does mean a `/v/` URL in a shared
    browser session or a screenshot carries the token in the HTML as well as the address
    bar. Not worth a fix; worth knowing before someone screenshots a 404 into a ticket.
-2. **No `.test.mts` file is in the `tsc` program.** `tsconfig.json` includes `**/*.ts`,
-   which does not match `.mts`, so all ten test files — the new one included — are run by
-   Node but never typechecked. Pre-existing and repo-wide; deliberately not changed in a
-   rotation commit, since widening the include would surface unrelated errors under time
-   pressure. Worth a wave of its own.
+2. ~~**No `.test.mts` file is in the `tsc` program.**~~ **Closed by wave 11.** The
+   include now carries `**/*.mts`, `allowImportingTsExtensions` makes the explicit `.ts`
+   specifiers (which `node --experimental-strip-types` requires) legal, and the three
+   real type errors that surfaced were fixed in the tests without weakening a production
+   type. 125 tests, all typechecked, all still passing.
 
 ## Opened by this wave
 
@@ -811,3 +822,178 @@ can watch them" was reason enough to burn the link.
    that proves anything — confirming the *old* link 404s — is the easiest to skip. Note
    the trap recorded there: a fresh Worker version takes a minute or two to reach every
    edge, and probing too early shows the old link still answering 200.
+
+---
+
+# Wave 11 — caching, the 404, the type gap, and the audits nobody had run (2026-09-02)
+
+Worker version `be86e6ba-a6bd-4271-9554-a79c0bf26149`. Three code commits plus this
+record. Deployed and re-verified live.
+
+## Two things this file claimed that were not true
+
+Both were believed, written down, and repeated across waves. Both took one measurement
+to disprove, and neither had ever been measured.
+
+1. **"`/ro` and `/en` still fetch `commissioner-cyrillic.woff2` lazily, ~21 KB"**
+   (wave 4, opened item 2). They do not, and there is nothing to save. Measured two
+   independent ways against the live site: five Lighthouse runs per locale, whose
+   `network-requests` show `/ro` fetching exactly two woff2 (both Latin, 55.9 KB) and
+   `/ru` fetching four (90.6 KB); and a direct CDP session that loaded `/ro` and `/en`,
+   waited well past load, **opened the mobile menu** (which renders a second
+   `LanguageSwitcher`) and read `document.fonts` — both Cyrillic faces report
+   `unloaded`, and no `/fonts/*cyrillic*` request is ever made.
+
+   The mechanism the entry assumed does not exist. `LanguageSwitcher` puts the endonym
+   in a `.sr-only` span **only for the active locale** — on `/ro` that is "Română". For
+   the other two it is an `aria-label`, which is not rendered text and never triggers
+   font matching. The only other "Русский" on the page is inside the RSC flight
+   `<script>` payload. A browser matches fonts against laid-out text; neither of those
+   is laid-out text.
+
+2. **"`/ro/nope` and `/nope` both get the proper branded 404"** (wave 3, still-open
+   item 2). They did not — on the live site or locally. Next renders the nearest
+   `not-found` boundary only when a segment on a *matched* route calls `notFound()`.
+   A path that matches no route never enters `[locale]/` at all, so it fell through to
+   Next's implicit `/_not-found`: black Helvetica on white, "404: This page could not
+   be found." The only way anyone had ever reached `src/app/[locale]/not-found.tsx` was
+   an unknown *service slug*, because `[slug]/page.tsx` calls `notFound()` explicitly.
+   That is the one case the earlier waves happened to test.
+
+   So the page written because "a dead end here is a lost job" was not shown to anyone
+   following a dead link. It is now.
+
+## Closed by this wave
+
+- **The `localhost:3000` `og:image` on the catch-all 404.** The branded share card moved
+  from `src/app/opengraph-image.png` (a Next *file convention*, attached to every route
+  below the root segment — including `/_not-found`, which sits outside `[locale]/` and
+  so never sees its `metadataBase`) to `public/opengraph-image.png`. Same bytes, same
+  URL, no convention. `/_not-found` now emits no `og:image` at all, and
+  `grep -r localhost .next/server/app` comes back empty. Checked live on `/ro`, `/ru`,
+  `/en`, `/ro/contact`, `/sitemap.xml`, `/robots.txt`, `/wp-login.php` and `/api/x`:
+  zero occurrences of `localhost` in any of them.
+
+- **Every unmatched in-locale path now renders the branded 404**, via a new
+  `src/app/[locale]/[...rest]/page.tsx` that does nothing but `notFound()`. Live:
+  `/ro/nope`, `/ru/nope`, `/en/nope`, `/nope` and `/ro/a/b/c` all return **404** with
+  the localized page, the services, the phone number and `<meta name="robots"
+  content="noindex">`. `experimental.globalNotFound` was **not** used — see wave 4.
+
+- **Static-asset caching.** `public/_headers` replaces the ASSETS binding's
+  `public, max-age=0, must-revalidate` default. Live now: `/_next/static/*` and
+  `/fonts/*` → `public, max-age=31536000, immutable`; `/images/*`,
+  `/opengraph-image.png`, `/favicon.ico` and the five logo files →
+  `public, max-age=86400`; HTML documents untouched at `s-maxage=31536000`.
+
+- **The `.mts` test suites are typechecked.** `**/*.ts` never matched `.mts`, so 125
+  tests ran under Node and were invisible to `tsc`. `**/*.mts` plus
+  `allowImportingTsExtensions` brings them in; three real type errors surfaced and were
+  fixed in the tests, not by loosening a production type. Still 125 passing.
+
+- **The DNS zone, read for the first time.** Eight records, all Cloudflare's own —
+  two `AAAA` at `100::` (the IPv6 discard prefix, which is what a proxied Worker Custom
+  Domain looks like), three Email Routing `MX`, and the SPF / DKIM / DMARC `TXT` trio
+  that Email Routing writes. **No `A`, no `CNAME`, no leftover from the old site,
+  nothing recommended for deletion.** Full table in `.agents/DEPLOY.md`, "Loose ends" 5.
+  It also re-confirms the wave-7 precondition for `includeSubDomains`: `www` is still
+  the zone's only other hostname.
+
+- **Email Routing forwards to a *verified* destination.** This had never been confirmed,
+  and an unverified destination fails silently. The account-scoped addresses endpoint
+  still refuses every token this project has, so the rules API was used as an oracle
+  instead: it rejects a rule whose destination is unverified with
+  `2054 Destination address is not verified` — observed directly against a throwaway
+  address — and a no-op `PUT` of the live `info@` rule, with its real destination, was
+  accepted. Three enabled rules (`info@`, `contact@`, `oferte@`), catch-all `drop`
+  disabled so unknown local parts bounce rather than vanish.
+
+- **The Resend-shaped confusion in the runbooks.** `.env.example` and `.agents/DEPLOY.md`
+  now say in the places somebody actually reads that Telegram is the live delivery path
+  and Resend is optional and unconfigured. The post-deploy smoke checklist no longer
+  tells the owner to go looking for an email that is never sent.
+
+- **The zone-level "Always Use HTTPS" loose end** (DEPLOY.md 3). It is on, verified by
+  effect: cleartext now answers `301` from Cloudflare's edge, ahead of the Worker, so it
+  also covers the static assets and the managed `/robots.txt` the application rules
+  could never reach.
+
+## Live Lighthouse, before and after
+
+Mobile, Lighthouse 13.4.1, same machine, same flags, five runs each side (plus six more
+on `/ro` afterwards to widen the sample).
+
+| | `/ro` before | `/ro` after | `/ru` before | `/ru` after |
+| --- | --- | --- | --- | --- |
+| Performance (median) | 93 | **91** | 91 | **89** |
+| Accessibility | 100 | 100 | 100 | 100 |
+| Best practices | 100 | 100 | 100 | 100 |
+| SEO | 100 | 100 | 100 | 100 |
+| LCP | 3.18 s | 3.36 s | 3.42 s | 3.65 s |
+| CLS | 0 | 0 | 0 | 0 |
+| TBT | 5 ms | 3 ms | 2 ms | 5 ms |
+| TTFB | 118 ms | 155 ms | 201 ms | 201 ms |
+
+**Two performance points down on both locales, and the honest reading is that it is not
+this change.** The drop equals the run-to-run spread exactly (`/ro` 91–93 before, 90–92
+after; a further six runs afterwards gave 91–92, median 91). LCP and TTFB moved together,
+which is the signature of network conditions and is precisely what wave 7 recorded when
+the same thing happened to a 62-byte header change. Wave 7's own seven-run `/ro` median
+was **91** — the same number — so the pre-deploy 93 is the outlier, not the after-set.
+And there is no mechanism: Lighthouse loads with a cold cache, so `Cache-Control` cannot
+help or hurt it, and nothing else in this wave touches a byte that `/ro` downloads.
+
+Note for anyone re-measuring: **Lighthouse 13.4.1 does not ship the `uses-long-cache-ttl`
+audit at all** — it is absent from all twenty reports, before and after. The caching work
+is therefore invisible to the score by construction, and `curl -sSI` is the only evidence
+for it. That is expected; the win is on repeat visits, which Lighthouse does not measure.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+- **`public/_headers` is immutable *only* where the URL carries the content hash.**
+  `/_next/static/*` and `/fonts/*` are safe because a change ships as a new filename.
+  `/images/*` is **not** and must not be given a year: the photographs are placeholders,
+  `hero-1080.avif` keeps its name when the client's own are re-encoded, and `immutable`
+  would strand a visitor on the old picture until 2027 with no way to push a fix.
+  One day is the deliberate compromise.
+- **The rules in `_headers` are non-overlapping on purpose.** Cloudflare applies every
+  matching rule and appends repeated header values, so two rules that both set
+  `Cache-Control` on one file produce a doubled, nonsensical header. That is why the
+  brand files are listed one by one instead of behind a `/*`.
+- **`next.config.ts`'s `headers()` and `public/_headers` are two hand-kept copies of one
+  policy.** There is no shared source. The config block only ever applies under
+  `next start`; the `_headers` file is what production reads. Change one, change both.
+- **The share card lives in `public/`, not as a file convention.** Putting it back under
+  `src/app/` reintroduces the `localhost` `og:image` on `/_not-found`. Every page already
+  names the URL explicitly through `BRANDED_OG_IMAGE`, so the convention bought nothing.
+- **`[locale]/[...rest]` is a catch-all, i.e. the lowest-priority match in its segment.**
+  It cannot shadow `/ro/servicii`, `/ro/despre-noi` or `/ro/v/<token>`, all of which were
+  re-verified after it landed. It is also **not** a fix for the implicit `/_not-found`,
+  which is outside `[locale]/` and stays Next's own page.
+- **`min_tls_version` is still `1.0` and was deliberately left alone.** Cloudflare's
+  default. Raising it to `1.2` is one setting and is what most sites should do, but it
+  locks out clients — that is the domain owner's call, not a deploy script's. Recorded
+  in DEPLOY.md so it is a decision rather than an oversight.
+
+## Skipped, with the reason
+
+- **Per-clip video titles** (wave 9, opened item 3) — still "Videoclipul 1/2/3".
+  Unchanged on purpose. Nothing about the footage has been described by anyone, and the
+  only facts on record are the dimensions and durations from wave 10. Writing titles from
+  a thumbnail would be inventing claims about a client's work, which is worse than
+  numbering it. This needs one sentence from whoever filmed them, not another agent.
+- **Cloudflare's managed robots.txt / AI Crawl Control** — explicitly out of scope. It is
+  a content-licensing decision, not a technical one.
+
+## Still open
+
+1. **Cloudflare's managed `robots.txt` block** (wave 5, opened item 1). Unchanged and
+   deliberately untouched.
+2. **Nothing expires a private video link** (wave 9, opened item 4), and rotation is a
+   hand-run checklist (wave 10, opened item 2).
+3. **Clip 2 is 848×478** (wave 9, opened item 2) — the only master that exists.
+4. **`scripts/build-fonts.py` pins upstream by sha256 against a moving branch** (wave 4,
+   opened item 3). Somebody has to notice when it starts refusing to build.
+5. **Never tested**: non-Chromium browsers and a real screen reader.
+6. **`min_tls_version` is `1.0`.** A decision for the owner; see above.
+

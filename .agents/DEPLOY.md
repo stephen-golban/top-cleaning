@@ -431,10 +431,13 @@ Every line must start with `200`.
 
 - [ ] Open `/ro/contact`, fill in the three fields, submit.
 - [ ] You get the green confirmation panel, **not** the "could not be sent" one.
-- [ ] The email actually arrives at `QUOTE_NOTIFY_EMAIL`. Check spam.
-- [ ] If it says "could not be sent": the Resend secrets are missing or wrong. Fix them
-      with `wrangler secret put`. No redeploy needed. Nothing is lost in the meantime —
-      every undelivered submission is in `npx wrangler tail` as `[quote] UNDELIVERED`.
+- [ ] The message actually arrives **in Telegram**, in the chat that owns
+      `TELEGRAM_CHAT_ID`. That is the live delivery path; no email is sent, and
+      `QUOTE_NOTIFY_EMAIL` is only read by the Resend fallback, which has no API key.
+- [ ] If it says "could not be sent": `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` is
+      missing or wrong. Fix it with `wrangler secret put`. No redeploy needed. Nothing
+      is lost in the meantime — every undelivered submission is in `npx wrangler tail`
+      as `[quote] UNDELIVERED`, with the whole submission attached.
 
 **Search engines**
 
@@ -479,8 +482,19 @@ Every line must start with `200`.
 
 ## Verifying topcleaning.md in Resend
 
-Only needed if you want the quote emails to come **from** `@topcleaning.md` rather than
-from Resend's shared `onboarding@resend.dev`.
+**Nothing in this section is required, and as of 2026-09-02 none of it has been done.**
+The quote form delivers over Telegram; Resend is an unconfigured fallback that exists
+only so email remains one `wrangler secret put` away. Read this section only if you have
+decided to switch the form back to email *and* want the mail to come **from**
+`@topcleaning.md` rather than from Resend's shared `onboarding@resend.dev`.
+
+> **Before you add anything here, note what the zone already has.** The DNS audit on
+> 2026-09-02 (see "Loose ends") found `topcleaning.md` already carrying an SPF `TXT`, a
+> `cf2024-1._domainkey` DKIM `TXT` and a `_dmarc` `TXT`, all three placed by Cloudflare
+> Email Routing. Resend's SPF and DKIM live on `send.` and `resend._domainkey.`, so
+> those do not collide — but **`_dmarc` does**. A domain may have exactly one `_dmarc`
+> record; adding a second silently breaks DMARC for both. Edit the existing one rather
+> than creating another.
 
 In Resend: **Domains** → **Add Domain** → `topcleaning.md` → pick the region (**EU
 (Ireland)** is the closest to Moldova; the region is **immutable** once chosen). Resend
@@ -509,7 +523,8 @@ Adding them in Cloudflare: **DNS** → **Records** → **Add record** for the
 - Do not touch the existing `topcleaning.md` and `www` records — those are the Worker's
   Custom Domains and Cloudflare manages them.
 
-Recommended, not required by Resend:
+Recommended, not required by Resend — but see the warning above: a `_dmarc` record
+already exists on this zone, so **edit** it, do not add a second one.
 
 | Type | Name / host | Value |
 | --- | --- | --- |
@@ -880,26 +895,111 @@ Use `--resolve`; this machine's resolver has a stale negative cache for the doma
    HTTP". To change it: Cloudflare dashboard → the account → **AI Crawl Control** →
    **Robots.txt** → turn managed robots.txt off, or switch it to a policy you chose.
    This needs the dashboard; the deploying OAuth token cannot write zone settings.
-3. **"Always Use HTTPS" is still off at the zone level.** The redirect and HSTS are
-   enforced by the application instead (see "HTTPS and HSTS"), which covers every
-   document the Worker serves. The zone toggle is still worth turning on the day someone
-   has a token or a dashboard session: it runs earlier in the edge pipeline than the
-   Worker, so it also covers the two things the app cannot reach — static assets and
-   Cloudflare's managed `/robots.txt` — and it survives a bad deploy. Dashboard →
-   the zone → **SSL/TLS** → **Edge Certificates** → **Always Use HTTPS**. The two are
-   complementary; enabling it does not make the application rules redundant, because
-   those are the ones that live in version control.
+3. ~~**"Always Use HTTPS" is still off at the zone level.**~~ **Closed 2026-09-02.**
+   `always_use_https` and `automatic_https_rewrites` are both `on`, set through the API
+   with a token that carries **Zone Settings: Edit**. Verified by effect:
+   `http://topcleaning.md/ro/contact?x=1` now answers **`301`** from Cloudflare's edge,
+   not the application's `308` — the edge rule runs first, so it also covers the two
+   things the app cannot reach (static assets and Cloudflare's managed `/robots.txt`).
+   The application-level redirect and HSTS in `next.config.ts` and `src/middleware.ts`
+   **stay**: they are the version-controlled half, they survive someone flipping the
+   dashboard switch back, and they are what put HSTS on the response at all — the zone's
+   own HSTS (`security_header`) is still disabled, deliberately, because the app already
+   sets it and two sources would ship the header twice.
+
+   While that token was in hand, the rest of the zone was read: `ssl` is `full`,
+   `brotli` `on`, `http3` `on`, `early_hints` `off`. One thing worth a decision that
+   nobody has made: **`min_tls_version` is `1.0`**, Cloudflare's default. TLS 1.0 and
+   1.1 are deprecated and no browser in use still needs them; raising it to `1.2` is a
+   one-setting change. It was **not** changed here — it locks out clients, which is the
+   owner's call, not a deploy script's.
 4. ~~**Only `QUOTE_NOTIFY_EMAIL` is set** — the quote form cannot deliver.~~ **Closed
    2026-09-02** — `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set and delivery is
    verified end to end against the live site. The video half closed the same day: all
    three `CF_STREAM_*` secrets are set and `/v/` plays video. Six secrets are now set,
    and `CF_STREAM_API_TOKEN` is deliberately **not** among them.
-5. **DNS records could not be enumerated** during the deploy — the OAuth token has
-   `zone (read)` but not `#dns_records:read`, so `GET /zones/{id}/dns_records` returns
-   `10000 Authentication error`. The zone was confirmed active and both hostnames were
-   confirmed to serve the Worker over HTTPS, which is the outcome that matters, but
-   nobody has actually looked at the record list. Worth a glance in the dashboard for
-   leftovers from the old site.
+5. ~~**DNS records could not be enumerated.**~~ **Closed 2026-09-02** — the zone was
+   read with a token carrying **DNS: Edit**. Eight records, all accounted for, **nothing
+   left over from the old site and nothing to delete**:
+
+   | Type | Name | Content | Proxied | Why it is there |
+   | --- | --- | --- | --- | --- |
+   | `AAAA` | `topcleaning.md` | `100::` | yes | Worker Custom Domain |
+   | `AAAA` | `www.topcleaning.md` | `100::` | yes | Worker Custom Domain |
+   | `MX` | `topcleaning.md` | `route1.mx.cloudflare.net` (33) | — | Email Routing |
+   | `MX` | `topcleaning.md` | `route2.mx.cloudflare.net` (74) | — | Email Routing |
+   | `MX` | `topcleaning.md` | `route3.mx.cloudflare.net` (52) | — | Email Routing |
+   | `TXT` | `topcleaning.md` | `v=spf1 include:_spf.mx.cloudflare.net ~all` | — | Email Routing SPF |
+   | `TXT` | `cf2024-1._domainkey` | DKIM public key | — | Email Routing DKIM |
+   | `TXT` | `_dmarc` | `v=DMARC1; p=none; …` | — | Email Routing DMARC |
+
+   `100::` is the IPv6 discard prefix — the placeholder Cloudflare writes for a proxied
+   hostname whose traffic is answered by a Worker rather than an origin. It is correct
+   and must not be "fixed" to a real address. There are **no** `A` records, no `CNAME`,
+   and no third hostname, which also means the `includeSubDomains` in the site's HSTS
+   is still safe (see "HTTPS and HSTS").
+
+6. **Email Routing forwards to a verified destination.** ~~Nobody had confirmed it.~~
+   Confirmed 2026-09-02. Three enabled rules — `info@`, `contact@` and `oferte@` — all
+   forward to the owner's Gmail address; the catch-all `drop` rule is disabled, so mail
+   to any other local part bounces rather than vanishing. The destination **is
+   verified**, proved by effect rather than by reading it: the account-scoped
+   `/accounts/{id}/email/routing/addresses` endpoint still refuses every token this
+   project has (it needs an account-level Email Routing permission, not the zone-level
+   one), so instead the rules API was used as an oracle. It rejects a rule whose
+   destination is unverified with `2054 Destination address is not verified` — observed
+   directly against a throwaway address — and a no-op `PUT` of the live `info@` rule,
+   with its real destination, was accepted. An unverified destination could not have
+   passed that write. Forwarding is live.
+
+---
+
+## The 2026-09-02 caching / 404 deploy
+
+Worker version `be86e6ba-a6bd-4271-9554-a79c0bf26149`, rolled to 100% by Cloudflare.
+`wrangler deploy` printed `No targets deployed for top-cleaning` again — still expected,
+still fine (see "Things this file deliberately does not do"). Five assets uploaded, 132
+already there.
+
+**What shipped**: `public/_headers` (real cache lifetimes for the ASSETS binding), the
+share card moved from `src/app/opengraph-image.png` to `public/opengraph-image.png` so
+Next's implicit `/_not-found` stops resolving it against `http://localhost:3000`, a
+`[locale]/[...rest]` catch-all so unmatched in-locale paths get the branded 404, and
+`**/*.mts` in the `tsc` program. Full reasoning: `.agents/FOLLOWUPS.md`, wave 11.
+
+**Verified live afterwards**, in this order:
+
+- All **24 sitemap URLs → 200**, every one on the apex, **zero `/v/`**.
+- Cache lifetimes: hashed CSS, hashed JS and all four woff2 →
+  `public, max-age=31536000, immutable`; `/images/*`, `/opengraph-image.png`,
+  `/favicon.ico` and the five logo files → `public, max-age=86400`; the HTML documents
+  still `s-maxage=31536000`; `/_headers` itself not served as an asset.
+- `http://` → **301 at Cloudflare's edge** (the zone toggle now fires first), with **no**
+  HSTS on the cleartext hop; **exactly one** HSTS header on `https://…/ro` and on the
+  `/` → `/ro` 307.
+- `www` → apex, 308, root and deep. `http://www/ro` now takes **two** hops
+  (edge upgrade, then the app's `www` fold) rather than one — a consequence of the zone
+  toggle running ahead of the Worker, and harmless.
+- Six legacy redirect shapes → 308 → 200 at the right destination.
+- `/v/<invalid>` → 404 with `x-robots-tag: noindex, nofollow, noarchive, nosnippet`,
+  `referrer-policy: no-referrer`, and no UID, delivery host or JWT in the body.
+- **The real private link still plays all three clips**, driven by headless Chrome
+  through CDP flat auto-attach (the Stream player is a cross-origin iframe, so the
+  `<video>` is not in the top frame — a naive `document.querySelector('video')` finds
+  nothing and looks like a failure). `readyState` 4 on all three, `currentTime` advancing
+  3.5 s each, 2.3 / 4.0 / 3.7 MB of media fetched, and the decoded dimensions and
+  durations match the intended playlist order: 360×640/12.3 s, 638×360/64.9 s,
+  360×640/76.3 s.
+- Branded 404 on `/ro/nope`, `/ru/nope`, `/en/nope`, `/nope` and an unknown slug, all
+  404, all `noindex`. Zero `localhost` on any page checked, including `/wp-login.php`.
+- `robots.txt` still `Disallow: /v/` with `Host:` and `Sitemap:` on the apex.
+- **`wrangler secret list` unchanged** — the same six names before and after.
+- axe: **0 violations** over 18 page-states (9 URLs × 390 and 1440), including the newly
+  branded `/ro/nope` and `/ru/nope`.
+
+**Not re-tested, deliberately**: a live quote-form submission. The delivery code is
+byte-identical to the version already proved end to end earlier the same day, and every
+test submission leaves a message the owner then has to delete from his Telegram.
 
 ---
 
