@@ -29,6 +29,8 @@ Everything below is typed into that same window.
 | HSTS | `max-age=31536000; includeSubDomains`, no `preload` |
 | Preview URL | none — `workers.dev` was turned off on 2026-09-01 (see "The workers.dev URL") |
 | Certificate | Google Trust Services `WE1`, issued by Cloudflare, auto-renewing |
+| Current version | `ada1deb5-1843-4094-8273-1229d94a137a`, deployed 2026-09-02 |
+| Quote requests | delivered to Telegram, verified live — see `.agents/telegram-setup.md` |
 
 ---
 
@@ -120,6 +122,40 @@ console.log(h.match(/<link rel="canonical" href="([^"]+)"/)[1])'
 
 If it says `localhost`, stop and fix `.env.production` — do not deploy.
 
+### Nothing but `NEXT_PUBLIC_*` may go in a `.env` file
+
+This is the other half of the same rule, and it bites harder. Next loads `.env`,
+`.env.local` and `.env.production` while it builds, and `@opennextjs/cloudflare`
+**writes everything it loaded into `.open-next/cloudflare/next-env.mjs`, which is
+bundled into the Worker that gets uploaded.** A `TELEGRAM_BOT_TOKEN=` line in
+`.env.local` therefore does not just configure your laptop — it is uploaded to
+Cloudflare in plaintext, inside the script, where it shadows the real
+`wrangler secret`, survives `wrangler secret delete`, and can be read back by anyone
+with access to the Worker.
+
+That happened. The 2026-09-02 deploy `fdaf2174` shipped the live bot token this way
+before it was caught; `ada1deb5` is the rebuilt, clean replacement. See "The
+2026-09-02 deploy" below.
+
+So the split is:
+
+| Where | What belongs there | Read when |
+| --- | --- | --- |
+| `.env.production` | `NEXT_PUBLIC_SITE_URL` and nothing else | build time, inlined into pages |
+| `.dev.vars` (gitignored) | runtime secrets, for `pnpm preview` / `wrangler dev` | runtime, local only, never bundled |
+| `wrangler secret put` | runtime secrets, for the live site | runtime, on Cloudflare |
+
+`pnpm deploy` now enforces it. Between build and upload it runs
+`node scripts/check-build-env.mjs`, which reads the generated
+`next-env.mjs` and **aborts the deploy** if it carries any key that is not
+`NEXT_PUBLIC_*`. Run it on its own with `pnpm check:build-env`. If it fails, move the
+named variables into `.dev.vars` and `wrangler secret put` — do not work around it.
+
+One consequence worth knowing: `pnpm dev` (plain `next dev`) does not read `.dev.vars`,
+so the quote form there will show the "could not be sent" panel. That is correct, not a
+bug. To exercise real delivery locally use `pnpm preview`, which runs the actual
+workerd runtime and does read `.dev.vars`.
+
 ---
 
 ## Step 4 — Put the secrets into Cloudflare
@@ -129,18 +165,33 @@ below opens a prompt; type or paste the value there and press Enter. Nothing is 
 to your screen or your shell history. The Worker already exists, so none of these will
 ask to create it.
 
-**As of 2026-09-01 exactly one secret is set** — `npx wrangler secret list` prints
-`QUOTE_NOTIFY_EMAIL`. `RESEND_API_KEY` is still missing, so the quote form still cannot
-deliver: it knows where to send, but not how. Secrets survive a redeploy — verified
-across the `workers_dev` deploy on 2026-09-01 — so you set them once.
+**As of 2026-09-02 three secrets are set** — `npx wrangler secret list` prints
+`QUOTE_NOTIFY_EMAIL`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. The quote form
+delivers over Telegram and this has been verified end to end against the live site
+(see "The 2026-09-02 deploy"). `RESEND_API_KEY` is still unset, which is fine:
+Telegram takes precedence over Resend anyway, and email is only the fallback nobody
+has asked for. Secrets survive a redeploy — verified across the `workers_dev` deploy
+on 2026-09-01 and again across both 2026-09-02 deploys — so you set them once.
 
-### 4a. The quote form (do this, or the form cannot email anyone)
+### 4a. The quote form (do this, or the form cannot reach anyone)
 
-The contact form is delivered by [Resend](https://resend.com). Without these two the form
-still works and still validates, but it shows the visitor "the request could not be sent,
-here is our phone number" instead of a confirmation — deliberately, so nobody is ever
-told a message was delivered when it was not. Every undelivered submission is written to
-the Worker log as `[quote] UNDELIVERED`, readable with `npx wrangler tail`.
+The contact form is delivered over **Telegram** — already set up and verified; see
+`.agents/telegram-setup.md`. These are the two secrets it needs:
+
+```bash
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_CHAT_ID
+```
+
+Without them the form still works and still validates, but it shows the visitor "the
+request could not be sent, here is our phone number" instead of a confirmation —
+deliberately, so nobody is ever told a message was delivered when it was not. Every
+undelivered submission is written to the Worker log as `[quote] UNDELIVERED`, with the
+whole submission attached so it is recoverable, readable with `npx wrangler tail`.
+
+Email delivery via [Resend](https://resend.com) is still in the code as a fallback and
+still has no API key. When both are configured **Telegram wins**. To go back to email,
+delete the two Telegram secrets and set these instead:
 
 ```bash
 npx wrangler secret put RESEND_API_KEY
@@ -470,13 +521,84 @@ Known-good versions, for reference:
 | `185a1081-0b7c-4a99-adb1-35b734c73485` | 2026-09-01 10:46Z | same code; version cut by a `wrangler secret put` |
 | `e35e1570-bce1-4b99-a112-837ce67ff57c` | 2026-09-01 11:00Z | `workers_dev: false` — `workers.dev` retired |
 | `399840ff-9b01-480f-8968-24c8c284dd82` | 2026-09-01 11:26Z | **do not deploy** — unanchored `has` pattern; every HTTPS request redirected to itself |
-| `b177851e-bf42-4996-8fc5-69859b5c25c7` | 2026-09-01 11:39Z | **current**; HTTP → HTTPS `308` + HSTS |
+| `b177851e-bf42-4996-8fc5-69859b5c25c7` | 2026-09-01 11:39Z | HTTP → HTTPS `308` + HSTS; last pre-Telegram build |
+| `e858b3f1-6255-4bb4-8566-fc1cd47e2553` | 2026-09-02 07:07Z | same code; version cut by the two Telegram `secret put`s |
+| `fdaf2174-8a34-4811-9e4b-57bd860f79fb` | 2026-09-02 07:10Z | **do not deploy** — Telegram works, but the bot token is baked into the bundle |
+| `ada1deb5-1843-4094-8273-1229d94a137a` | 2026-09-02 07:18Z | **current**; identical code, rebuilt with no secrets in the bundle |
 
 If turning `workers.dev` off ever appears to break the live domain, `npx wrangler
 rollback 185a1081-0b7c-4a99-adb1-35b734c73485` returns to the last version that had the
 subdomain enabled. Note that a rollback restores the *Worker version*, not the account
 setting: `workers_dev` is read from `wrangler.jsonc` at deploy time, so to genuinely put
 the subdomain back you must also set it to `true` (or delete the line) and redeploy.
+
+---
+
+## The 2026-09-02 deploy
+
+The first deploy of the Telegram quote delivery. Two versions were uploaded; the second
+is the one that matters.
+
+**What shipped.** `40b848f` — the Telegram provider — had been committed on 2026-09-01
+but never deployed, so the live site was still running the pre-Telegram build even
+though both secrets were already set. `fdaf2174` deployed it. `ada1deb5` redeployed the
+identical code after a build fault was found, and is what is live.
+
+**The build fault.** `fdaf2174` was built on a machine whose `.env.local` held
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and `QUOTE_NOTIFY_EMAIL`. OpenNext copied all
+three into `.open-next/cloudflare/next-env.mjs` and uploaded them inside the Worker
+script — the live bot token, in plaintext, in the bundle. The site worked, because the
+baked values were correct; it was a disclosure problem, not an outage. It was found
+while testing the "no provider configured" path locally: a build that should have had no
+Telegram configuration delivered anyway.
+
+The fix was to move the three variables from `.env.local` (build-time) to `.dev.vars`
+(runtime, local only, never bundled), delete `.env.local`, rebuild, and redeploy. The
+clean bundle inlines exactly one variable, `NEXT_PUBLIC_SITE_URL`. `pnpm deploy` now
+runs `scripts/check-build-env.mjs` between build and upload so this cannot recur
+silently — see "Nothing but `NEXT_PUBLIC_*` may go in a `.env` file" in Step 3.
+
+**Should the token be rotated?** The exposure was to whoever can read the Worker script,
+which is the Cloudflare account owner — the same person who holds the secret. So the
+practical risk is low and nothing was rotated. If the account is ever shared, or an API
+token with Workers-read scope is ever issued to anyone else, revoke the bot token with
+`/revoke` to @BotFather and redo `wrangler secret put TELEGRAM_BOT_TOKEN`.
+
+**What was verified against the live site**, on `ada1deb5`:
+
+- Three real submissions through the live form — `/ro/contact`, `/ru/kontakty`,
+  `/en/contact` — all arriving in Telegram. The anti-spam defences were honoured rather
+  than disabled: the honeypot was left empty and a real browser timestamp was posted
+  after a genuine four-second wait, so the 2.5-second timing gate ran and passed.
+- The service name is localised per submission (`Curățenie generală` / `Генеральная
+  уборка` / `Deep cleaning`) and `Limba formularului:` carries the right locale. The
+  message chrome itself stays Romanian in all three, by design — the owner reads
+  Romanian; only the visitor's own words and their service are in the visitor's
+  language.
+- **The phone number auto-links.** Telegram returns a `phone_number` entity over
+  `+37379022023` on all three messages, so the number is tappable straight into a call.
+  This was the one thing `.agents/FOLLOWUPS.md` flagged as unverifiable without a real
+  send. It is verified; the documented `<code>` tap-to-copy fallback is not needed.
+- The honest-failure path, on workerd with the Telegram variables absent: no success
+  panel, the "could not be sent" panel with the phone and WhatsApp links instead, and
+  `[quote] UNDELIVERED — no delivery provider configured (missing: …)` in the log with
+  the whole submission attached. Re-checked with a deliberately wrong token: same
+  panel, `telegram responded 401`, and the token redacted out of the log line.
+- Regression sweep: all 24 sitemap URLs 200, no `/v/` path in the sitemap, no
+  `localhost` anywhere in it; cleartext `http://` → 308 → HTTPS with no HSTS header on
+  the cleartext hop and HSTS present on HTTPS; `/` → `/ro`; `www` → apex; the legacy
+  308s still land on 200s; an invalid `/v/` token gives a 404 carrying `x-robots-tag:
+  noindex, nofollow, noarchive, nosnippet`, `referrer-policy: no-referrer` and
+  `cache-control: private, no-cache, no-store, max-age=0, must-revalidate`, leaking no
+  token or video id.
+- Lighthouse mobile on `/ro`, Lighthouse 12.8.2: performance **92, 96, 98, 92** over
+  four runs, median **94** — the original baseline. The single "91" recorded on
+  2026-09-01 was run-to-run noise in LCP, not a regression; one run is not a
+  measurement here. Accessibility 100, Best Practices 100, SEO 92 (see loose end 2).
+
+Three test messages were left in the owner's Telegram, each saying in its own language
+that it is a technical test and using the company's own public number `079 022 023` as
+the caller, so no stranger's number appears.
 
 ---
 
@@ -656,7 +778,7 @@ Use `--resolve`; this machine's resolver has a stale negative cache for the doma
 
 ---
 
-## Loose ends, as of 2026-09-01
+## Loose ends, as of 2026-09-02
 
 1. ~~**`https://top-cleaning.ibeep.workers.dev` is still public**~~ **Closed
    2026-09-01** — see "The workers.dev URL" below.
@@ -664,9 +786,14 @@ Use `--resolve`; this machine's resolver has a stale negative cache for the doma
    `Content-Signal: search=yes,ai-train=no,use=reference` and `Disallow: /` for ten AI
    crawlers (GPTBot, ClaudeBot, Google-Extended, CCBot, Bytespider, …). The site's own
    `Disallow: /v/` group still applies — crawlers merge groups with the same
-   `User-agent`. The live Lighthouse SEO score used to read 92 because Lighthouse did
-   not recognise `Content-Signal:`; as of 2026-09-01 it reads **100**, so that objection
-   is gone. What remains is that this feature also intercepts `/robots.txt` over plain
+   `User-agent`. It also costs a Lighthouse SEO point: Lighthouse flags
+   `Content-Signal:` as an "Unknown directive" (line 30 of the served `robots.txt`),
+   which is the *only* failing SEO audit. That reads **92** under Lighthouse 12.8.2 on
+   2026-09-02. It briefly read 100 on 2026-09-01 under a different Lighthouse build —
+   the site did not change, the linter did, so treat the 100 as the anomaly and do not
+   go hunting for a regression. Nothing is actually wrong: the directive is Cloudflare's
+   and real crawlers ignore what they do not understand.
+   What remains is that this feature also intercepts `/robots.txt` over plain
    HTTP ahead of the Worker — see "HTTPS and HSTS", "Two things still answer on plain
    HTTP". To change it: Cloudflare dashboard → the account → **AI Crawl Control** →
    **Robots.txt** → turn managed robots.txt off, or switch it to a policy you chose.
@@ -680,8 +807,10 @@ Use `--resolve`; this machine's resolver has a stale negative cache for the doma
    the zone → **SSL/TLS** → **Edge Certificates** → **Always Use HTTPS**. The two are
    complementary; enabling it does not make the application rules redundant, because
    those are the ones that live in version control.
-4. **Only `QUOTE_NOTIFY_EMAIL` is set.** `RESEND_API_KEY` is still missing, so the quote
-   form still cannot deliver, and `/v/` cannot play video.
+4. ~~**Only `QUOTE_NOTIFY_EMAIL` is set** — the quote form cannot deliver.~~ **Closed
+   2026-09-02** — `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set and delivery is
+   verified end to end against the live site. What is still open from this item is the
+   video half: no `CF_STREAM_*` secret is set, so `/v/` cannot play video.
 5. **DNS records could not be enumerated** during the deploy — the OAuth token has
    `zone (read)` but not `#dns_records:read`, so `GET /zones/{id}/dns_records` returns
    `10000 Authentication error`. The zone was confirmed active and both hostnames were

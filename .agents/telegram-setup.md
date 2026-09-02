@@ -1,5 +1,26 @@
 # Quote requests on Telegram — setup
 
+> ## ✅ Done — this is live as of 2026-09-02
+>
+> Nothing on this page needs doing again. It is kept as the record of how it was set
+> up, and as the instructions for redoing it if the bot is ever replaced.
+>
+> | Thing | Value |
+> | --- | --- |
+> | Bot | **@TopCleaningMD_Bot** ("TopCleaning") |
+> | Delivers to | chat id **`5127988710`** — Ștefan, @ste_ghj, private chat |
+> | Live since | Worker version `ada1deb5-1843-4094-8273-1229d94a137a` |
+> | Verified | three real submissions through the live form, in `ro`, `ru` and `en` |
+>
+> **The tappable phone number works.** This was the one thing that could not be checked
+> without a real send, and it has now been checked: Telegram returns a `phone_number`
+> entity over the `+373…` number on every one of the three test messages, so tapping
+> the `Telefon:` line offers to call. The `<code>` tap-to-copy fallback that was written
+> down as a contingency is not needed and was not used.
+>
+> Three messages marked as a test are sitting in the chat from that verification. They
+> use the company's own number, `079 022 023`. Delete them whenever you like.
+
 When somebody fills in the form on topcleaning.md, the request arrives as a Telegram
 message on your phone. The message contains the service they picked, what they wrote,
 and their phone number — **and the phone number is tappable, so you call back in one
@@ -73,7 +94,7 @@ this page needs it.
 
 ## Step 2 — Put the token in a file
 
-In the project folder there is a file called `.env.local`. If it does not exist, create
+In the project folder there is a file called `.dev.vars`. If it does not exist, create
 it. It is never uploaded to GitHub.
 
 Add this line, with your real token between the quotes:
@@ -83,6 +104,14 @@ TELEGRAM_BOT_TOKEN="123456789:AAH9xK-abcdefghijklmnopqrstuvwxyz012"
 ```
 
 Save the file.
+
+> **It must be `.dev.vars`, not `.env.local`.** They look interchangeable and they are
+> not. Next reads `.env.local` while it *builds*, and the build result — token included
+> — gets uploaded to Cloudflare inside the site's own code, where anyone with access to
+> the account can read it. That happened once, on 2026-09-02, and was caught and
+> cleaned up the same day. `.dev.vars` is read only when the site runs on your own
+> machine and is never uploaded. `pnpm deploy` now refuses to publish a build with a
+> secret in it, so a slip here is a failed deploy rather than a leak.
 
 ---
 
@@ -109,7 +138,7 @@ In the Terminal, inside the project folder, run:
 pnpm telegram:chat-id
 ```
 
-It reads the token out of `.env.local` — so you never type it on the command line — and
+It reads the token out of `.dev.vars` — so you never type it on the command line — and
 prints something like:
 
 ```
@@ -118,8 +147,8 @@ prints something like:
 ────────────────────────────────────────────────────────────────────────
 ```
 
-Copy that whole `TELEGRAM_CHAT_ID="…"` line into `.env.local`, underneath the token line.
-`.env.local` now has two lines:
+Copy that whole `TELEGRAM_CHAT_ID="…"` line into `.dev.vars`, underneath the token line.
+`.dev.vars` now has two lines:
 
 ```
 TELEGRAM_BOT_TOKEN="123456789:AAH9xK-abcdefghijklmnopqrstuvwxyz012"
@@ -153,7 +182,7 @@ your browser history and possibly into a synced-across-devices autocomplete.
 
 ## Step 5 — Send the two secrets to the live site
 
-`.env.local` only affects your own computer. The live website is on Cloudflare and needs
+`.dev.vars` only affects your own computer. The live website is on Cloudflare and needs
 its own copy. Run these two commands, one at a time:
 
 ```bash
@@ -265,12 +294,22 @@ ever want email instead, remove the two Telegram secrets and set `RESEND_API_KEY
 - The provider lives in `src/components/forms/quote/delivery.ts` behind the one-method
   `QuoteDelivery` interface. Selection order: Telegram, then Resend, then the honest
   "undelivered" path.
+- Runtime secrets live in `.dev.vars` locally and in `wrangler secret put` on
+  Cloudflare — **never** in `.env.local`, which Next reads at build time and OpenNext
+  bundles into the uploaded Worker. `pnpm deploy` enforces this via
+  `scripts/check-build-env.mjs`. `pnpm dev` therefore cannot deliver; use `pnpm preview`,
+  which runs workerd and reads `.dev.vars`.
 - Messages use Telegram's `HTML` parse mode, escaping `&`, `<`, `>`. MarkdownV2 was
   rejected: it requires escaping eighteen characters, several of which (`.`, `-`, `(`,
   `)`) appear in ordinary prose and in every phone number.
 - The number is sent as bare E.164 text rather than a `tel:` link, because Telegram's
   servers auto-detect an international number into a tappable `phone_number` entity while
-  a `tel:` anchor is rejected by Telegram's URL scheme allowlist.
+  a `tel:` anchor is rejected by Telegram's URL scheme allowlist. **Confirmed against
+  real sends on 2026-09-02**: every one of the three live test messages comes back with
+  a `phone_number` entity over `+37379022023`. To re-check after any change to
+  `formatTelegramMessage`, forward the message within the chat and read
+  `Message.entities` off the `forwardMessage` response — the bot API cannot read back
+  its own outbound messages any other way, and `getUpdates` never shows them.
 - Messages are clamped to Telegram's 4096-code-unit limit without splitting an HTML
   entity — escaping can grow one character into five, so a 2000-character details field
   can exceed the limit.

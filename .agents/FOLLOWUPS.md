@@ -477,20 +477,40 @@ would ship a change with nothing to exercise it. The owner deploys after step 5 
 
 ## Opened by this wave
 
-1. **Nothing is deployed and nothing has ever been sent.** The owner must produce two
-   things and only two: a **bot token** from `@BotFather`, and a **numeric chat id**
-   obtained by sending `/start` to the new bot and running `pnpm telegram:chat-id`.
-   Then `wrangler secret put TELEGRAM_BOT_TOKEN`, `wrangler secret put
-   TELEGRAM_CHAT_ID`, `pnpm deploy`, and a real submission end to end.
+1. ~~**Nothing is deployed and nothing has ever been sent.**~~ **Closed 2026-09-02.**
+   Bot `@TopCleaningMD_Bot`, chat id `5127988710` (Ștefan, @ste_ghj). Both secrets set,
+   deployed as Worker version `ada1deb5-1843-4094-8273-1229d94a137a`, and proved with
+   three real submissions through the live form in `ro`, `ru` and `en` — honouring the
+   honeypot and the 2.5-second timing gate rather than disabling them. Details in
+   `.agents/DEPLOY.md`, "The 2026-09-02 deploy".
 2. **`079022023` is not a credential and cannot be one.** The owner supplied it as
    "the Telegram number". A bot cannot address a message by phone number; delivery
    requires the numeric chat id from the `/start` flow. That number is already the
    public business number on the site. Recorded in `.agents/telegram-setup.md` so it
    does not get re-litigated.
-3. **The `phone_number` auto-detection has not been observed on a real device.** It is
-   documented Telegram behaviour (`MessageEntity.type: "phone_number"`) and it is why
-   the number is sent bare, but the first real submission is the first proof. Step 6 of
-   the setup doc says to tap it. If it does not link, the fallback is not a `tel:`
-   anchor — it is `<code>` around the number, which is tap-to-copy in every client.
+3. ~~**The `phone_number` auto-detection has not been observed on a real device.**~~
+   **Closed 2026-09-02 — it works.** All three live test messages come back carrying a
+   `MessageEntity` of type `phone_number` spanning `+37379022023`, alongside the `bold`
+   entities for the labels, so the number is tappable straight into a call. Observed by
+   reading the message objects back off Telegram rather than by trusting the send: the
+   bot API has no "read my own message", so each message was forwarded within the chat
+   and the returned `Message.entities` inspected, then the forward deleted. The `<code>`
+   tap-to-copy fallback stays documented but is not needed — leave the number bare, and
+   still do not "improve" it into a `tel:` anchor.
 4. **Wave 5 item 3 is now half-closed.** `RESEND_API_KEY` is still unset and will
    probably stay that way. Stream credentials are still absent and unrelated.
+5. **A secret can be baked into the Worker by a `.env` file, and once was.** Found on
+   2026-09-02: Next loads `.env.local` at build time and `@opennextjs/cloudflare`
+   copies everything it loaded into `.open-next/cloudflare/next-env.mjs`, which is
+   bundled into the uploaded Worker — so deploy `fdaf2174` shipped the live bot token
+   in plaintext inside the script. Remediated by moving the runtime secrets to
+   `.dev.vars`, deleting `.env.local`, and redeploying as `ada1deb5`; `pnpm deploy` now
+   runs `scripts/check-build-env.mjs`, which aborts the deploy if the bundle carries any
+   non-`NEXT_PUBLIC_*` variable. Still open, low priority: the bot token was never
+   rotated, on the reasoning that the only party who could read the bundle is the
+   Cloudflare account owner, who already holds the secret. Rotate it via `/revoke` to
+   @BotFather the day anyone else gets account or Workers-read access.
+6. **`.env.example` still describes the old layout.** It predates the `.dev.vars` split
+   and should be reworked to say plainly that a `.env` file is build-time and public and
+   only `NEXT_PUBLIC_*` may live there. Cosmetic; the guard script enforces the rule
+   regardless of what the example says.

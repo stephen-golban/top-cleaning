@@ -4,7 +4,7 @@
  *
  *   pnpm telegram:chat-id
  *
- * Reads `TELEGRAM_BOT_TOKEN` from `.env.local` (or the environment) and calls
+ * Reads `TELEGRAM_BOT_TOKEN` from `.dev.vars` (or the environment) and calls
  * the bot's `getUpdates`. The token is never printed and never typed on a
  * command line, so it does not end up in shell history or in a chat window.
  *
@@ -18,7 +18,19 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const ENV_FILE = path.resolve(process.cwd(), ".env.local");
+/**
+ * Where a runtime secret lives on a developer's machine.
+ *
+ * `.dev.vars` and not `.env.local`: Next loads `.env*` at *build* time and
+ * OpenNext bundles whatever it loaded into the uploaded Worker, so a token in
+ * `.env.local` ships to Cloudflare in plaintext. `.dev.vars` is read by
+ * `wrangler dev` at runtime and is never bundled. `.env.local` is still
+ * accepted here so an older checkout keeps working.
+ */
+const ENV_FILES = [
+  path.resolve(process.cwd(), ".dev.vars"),
+  path.resolve(process.cwd(), ".env.local"),
+];
 const API = "https://api.telegram.org";
 
 function fail(message) {
@@ -27,11 +39,14 @@ function fail(message) {
 }
 
 function loadEnv() {
-  if (!existsSync(ENV_FILE)) return;
+  // First one that exists wins, so a checkout that still has both does not
+  // silently prefer the stale copy.
+  const file = ENV_FILES.find((candidate) => existsSync(candidate));
+  if (!file) return;
   try {
-    process.loadEnvFile(ENV_FILE);
+    process.loadEnvFile(file);
   } catch (error) {
-    fail(`could not read .env.local: ${error.message}`);
+    fail(`could not read ${path.basename(file)}: ${error.message}`);
   }
 }
 
@@ -57,7 +72,7 @@ async function main() {
   if (!token) {
     fail(
       "TELEGRAM_BOT_TOKEN is not set.\n" +
-        "  Put it in .env.local as a single line:\n" +
+        "  Put it in .dev.vars as a single line:\n" +
         '    TELEGRAM_BOT_TOKEN="123456789:AA..."\n' +
         "  See .agents/telegram-setup.md step 1.",
     );
@@ -132,7 +147,7 @@ async function main() {
   }
 
   console.log("\nNext:");
-  console.log("  1. Add that line to .env.local.");
+  console.log("  1. Add that line to .dev.vars.");
   console.log("  2. Send both secrets to the live site:");
   console.log("       wrangler secret put TELEGRAM_BOT_TOKEN");
   console.log("       wrangler secret put TELEGRAM_CHAT_ID");
