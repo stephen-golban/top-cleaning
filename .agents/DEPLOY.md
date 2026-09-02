@@ -233,8 +233,15 @@ npx wrangler secret put PRIVATE_VIDEO_LINKS            # optional
 scope**, so the signing key itself has to be created from the dashboard with an API token
 carrying `Stream:Edit` + `Account Settings:Read`.
 
-`CF_ACCOUNT_ID` and `CF_STREAM_API_TOKEN` from `.env.example` are **not** needed here.
-They are only used by the helper scripts you run on your own machine.
+`CF_ACCOUNT_ID` and `CF_STREAM_API_TOKEN` from `.env.example` are **not** needed here,
+and should not be set here. They are local CLI credentials used only by
+`pnpm video:stream` on your own machine; the Worker has no use for them.
+
+As in 4a, these are runtime bindings — a `secret put` takes effect on the **next**
+request, with no redeploy. Locally the same values go in `.dev.vars`. **Never in
+`.env.local`**: Next reads `.env*` at build time and OpenNext bundles what it read into
+the uploaded Worker, so a signing key there would be published inside the site's own
+source. `pnpm deploy` runs `scripts/check-build-env.mjs` and aborts if that happens.
 
 ### 4c. Check what is set
 

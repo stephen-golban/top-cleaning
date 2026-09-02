@@ -20,11 +20,16 @@
   // NEXT_PUBLIC_SITE_URL is inlined by Next at build time, so it belongs in the
   // build environment (.env / CI env), not in `vars` here — see .env.example.
   //
-  // Cloudflare Stream credentials are secrets, not vars:
-  //   wrangler secret put CF_ACCOUNT_ID
-  //   wrangler secret put CF_STREAM_API_TOKEN
+  // Cloudflare Stream. Only the signing key reaches the Worker — it is what
+  // signs playback JWTs on every request to a `/v/` page:
   //   wrangler secret put CF_STREAM_SIGNING_KEY_ID
   //   wrangler secret put CF_STREAM_SIGNING_KEY_PEM
+  //   wrangler secret put CF_STREAM_CUSTOMER_SUBDOMAIN   # optional
+  //
+  // CF_ACCOUNT_ID and CF_STREAM_API_TOKEN are deliberately NOT here. They are
+  // local CLI credentials for `pnpm video:stream` (mint a key, lock a video)
+  // and the Worker has no use for them, so giving them to it would only widen
+  // what a compromised Worker leaks. See .agents/video-setup.md.
   //
   // Quote-form delivery over Telegram. Both are required together; without them
   // the form shows the "could not be sent" panel and logs `[quote] UNDELIVERED`.

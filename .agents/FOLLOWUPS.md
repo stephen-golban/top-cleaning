@@ -432,8 +432,10 @@ would ship a change with nothing to exercise it. The owner deploys after step 5 
   Telegram all produce the same `[quote] UNDELIVERED …` log with the full submission and
   the "could not be sent" panel. There is still no path to a false success.
 - **Owner-facing runbook**: `.agents/telegram-setup.md`, plus `pnpm telegram:chat-id`
-  (`scripts/telegram-chat-id.mjs`), which reads the token from `.env.local` so it is
-  never typed on a command line or pasted into a chat.
+  (`scripts/telegram-chat-id.mjs`), which reads the token from a file so it is
+  never typed on a command line or pasted into a chat. (That file was `.env.local` when
+  this was written; it is `.dev.vars` now — see the `.env.local` leak entry below.
+  `scripts/stream.mjs` was moved the same way on 2026-09-02.)
 
 ## Decisions this wave took, that a later wave should not silently undo
 

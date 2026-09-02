@@ -42,3 +42,7 @@ yarn-error.log*
 # cloudflare local secrets
 .dev.vars
 .dev.vars.*
+
+# QR codes encode the secret /v/ links. scripts/make-qr.mjs also writes a
+# self-ignoring .gitignore inside this folder; this is the belt to that's braces.
+/qr-codes/
