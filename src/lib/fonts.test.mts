@@ -140,7 +140,12 @@ test("only /ru puts Cyrillic on the critical path", () => {
 
   for (const locale of ["ro", "en"] as const) {
     const hrefs = fontPreloads(locale).map((preload) => preload.href);
-    assert.deepEqual(hrefs, [serifFiles.latin.file, sansFiles.latin.file]);
+    // Typed `string[]` on purpose: `assert.deepEqual` is declared
+    // `asserts actual is T`, so an expected array of file-name literals would
+    // narrow `hrefs` and make the Cyrillic check below a type error instead of
+    // the runtime check it is meant to be.
+    const latinOnly: string[] = [serifFiles.latin.file, sansFiles.latin.file];
+    assert.deepEqual(hrefs, latinOnly);
     for (const file of cyrillic) assert.ok(!hrefs.includes(file));
   }
 

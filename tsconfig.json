@@ -19,14 +19,21 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": true,
+    // The *.test.mts suites are run by `pnpm test` via `node --experimental-strip-types`,
+    // which requires imports to carry explicit `.ts`/`.mts` extensions. Allow those
+    // specifiers here so the same files typecheck; safe because `noEmit` is set.
+    "allowImportingTsExtensions": true,
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
+  // `**/*.mts` is listed explicitly: `**/*.ts` does NOT match `.mts`, so without it the
+  // `*.test.mts` suites that `pnpm test` executes would never be typechecked.
   "include": [
     "next-env.d.ts",
     "**/*.ts",
+    "**/*.mts",
     "**/*.tsx",
     ".next/types/**/*.ts",
     "cloudflare-env.d.ts"

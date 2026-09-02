@@ -14,7 +14,15 @@ import type { VideoLink } from "./types.ts";
 
 const UID = "ea95132c15732412d22c1476fa83f27a";
 
-function link(overrides: Partial<VideoLink> = {}): VideoLink {
+/**
+ * The plaintext-`token` half of the `VideoLink` union — the only half this
+ * helper builds. Naming it keeps `link()` on one side of the discriminant, so
+ * the result stays assignable and `.token` reads as `string` rather than
+ * `string | undefined`. Hashed entries are written out longhand below.
+ */
+type PlainVideoLink = Extract<VideoLink, { token: string }>;
+
+function link(overrides: Partial<PlainVideoLink> = {}): PlainVideoLink {
   return { token: generateToken(), clips: [{ uid: UID }], ...overrides };
 }
 

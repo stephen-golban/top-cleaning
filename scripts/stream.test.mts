@@ -39,12 +39,15 @@ function generatePkcs1(): { pkcs1: string; publicKey: KeyObject } {
 }
 
 /** Strip the armour, exactly as `pemToDer` does in `src/lib/stream.ts`. */
-function pemToDer(pem: string): Uint8Array {
+function pemToDer(pem: string): Uint8Array<ArrayBuffer> {
   const body = pem
     .replace(/-----BEGIN [^-]+-----/g, "")
     .replace(/-----END [^-]+-----/g, "")
     .replace(/\s+/g, "");
-  return Buffer.from(body, "base64");
+  // Node types every `Buffer` as backed by `ArrayBufferLike` (i.e. possibly a
+  // `SharedArrayBuffer`, which `BufferSource` rejects); `Buffer.from(string)`
+  // never is. Same return type as the real `pemToDer` in `src/lib/stream.ts`.
+  return Buffer.from(body, "base64") as Uint8Array<ArrayBuffer>;
 }
 
 /** The import the Worker performs on every request to a `/v/` page. */
