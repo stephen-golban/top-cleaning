@@ -3,8 +3,13 @@
  * Turn a private video token (or a full link) into a print-ready QR code.
  *
  *   pnpm video:qr <TOKEN>
+ *   pnpm video:qr --token-file qr-codes/curatenie.txt
  *   pnpm video:qr https://topcleaning.md/ro/v/<TOKEN>
  *   pnpm video:qr <TOKEN> --locale ru --name curatenie-apartament
+ *
+ * `--token-file` reads the token out of a file written by
+ * `pnpm video:token --out FILE`, so the secret never appears on a command line
+ * and never reaches shell history or a session transcript.
  *
  * Writes an SVG (vector — use this for anything printed) and a large PNG
  * (for anyone who cannot place an SVG) into ./qr-codes, which is self-ignoring:
@@ -13,7 +18,7 @@
  * Error correction is fixed at level H (~30% recoverable). A business card that
  * has lived in a wallet is a hostile scanning environment; H is what survives it.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import QRCode from "qrcode";
@@ -22,8 +27,10 @@ const LOCALES = ["ro", "ru", "en"];
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,128}$/;
 
 const USAGE = `Usage: pnpm video:qr <token-or-url> [options]
+       pnpm video:qr --token-file <file> [options]
 
 Options:
+  --token-file <f> Read the token from a file written by \`pnpm video:token --out\`
   --base <url>     Site base URL (default: $NEXT_PUBLIC_SITE_URL or https://topcleaning.md)
   --locale <code>  ro | ru | en (default: ro)
   --out <dir>      Output directory (default: ./qr-codes)
@@ -42,7 +49,8 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") return { help: true };
-    if (arg === "--base") args.base = argv[++i] ?? args.base;
+    if (arg === "--token-file") args.tokenFile = argv[++i];
+    else if (arg === "--base") args.base = argv[++i] ?? args.base;
     else if (arg === "--locale") args.locale = argv[++i] ?? args.locale;
     else if (arg === "--out") args.out = argv[++i] ?? args.out;
     else if (arg === "--name") args.name = argv[++i];
@@ -51,7 +59,13 @@ function parseArgs(argv) {
     else positional.push(arg);
   }
 
-  if (positional.length !== 1) throw new Error("expected exactly one token or URL");
+  if (args.tokenFile) {
+    if (positional.length > 0) {
+      throw new Error("pass either a token or --token-file, not both");
+    }
+  } else if (positional.length !== 1) {
+    throw new Error("expected exactly one token or URL, or --token-file <file>");
+  }
   if (!LOCALES.includes(args.locale)) {
     throw new Error(`--locale must be one of ${LOCALES.join(", ")}`);
   }
@@ -62,6 +76,32 @@ function parseArgs(argv) {
   args.input = positional[0];
   args.base = args.base.replace(/\/+$/, "");
   return args;
+}
+
+/**
+ * Pull the token out of a `pnpm video:token --out` file: the last `TOKEN=` line,
+ * so a file that has accumulated several links yields the newest.
+ */
+async function readTokenFile(file) {
+  let contents;
+  try {
+    contents = await readFile(path.resolve(process.cwd(), file), "utf8");
+  } catch (error) {
+    throw new Error(`could not read ${file}: ${error.message}`);
+  }
+  const matches = [...contents.matchAll(/^TOKEN=([A-Za-z0-9_-]{22,128})\s*$/gm)];
+  const last = matches.at(-1);
+  if (!last) {
+    throw new Error(
+      `${file} has no TOKEN= line. Generate one with: pnpm video:token --out ${file}`,
+    );
+  }
+  if (matches.length > 1) {
+    console.error(
+      `Note: ${file} holds ${matches.length} tokens; using the last one written.`,
+    );
+  }
+  return last[1];
 }
 
 /** Accept either a bare token or an already-built link. */
@@ -97,13 +137,20 @@ async function main() {
 
   let target;
   try {
+    if (args.tokenFile) args.input = await readTokenFile(args.tokenFile);
     target = resolveTarget(args);
   } catch (error) {
     console.error(`${error.message}\n\n${USAGE}`);
     process.exit(1);
   }
 
-  const name = args.name ?? `video-${target.token.slice(0, 8)}`;
+  // Derived from the token file when there is one, so no part of the secret
+  // ends up in a filename that might be read aloud or pasted into an email.
+  const name =
+    args.name ??
+    (args.tokenFile
+      ? path.basename(args.tokenFile).replace(/\.[^.]+$/, "")
+      : `video-${target.token.slice(0, 8)}`);
   const outDir = path.resolve(process.cwd(), args.out);
   await mkdir(outDir, { recursive: true });
   // Belt and braces: these files contain the secret link.
@@ -132,7 +179,15 @@ async function main() {
     width: args.size,
   });
 
-  console.log(`\nEncoded link:  ${target.url}`);
+  if (args.tokenFile) {
+    // The whole point of --token-file is that the secret stays out of the
+    // terminal. Print the shape of the link, not the link.
+    console.log(
+      `\nEncoded link:  ${args.base}/${args.locale}/v/<token from ${args.tokenFile}>`,
+    );
+  } else {
+    console.log(`\nEncoded link:  ${target.url}`);
+  }
   console.log(`SVG (print):   ${svgPath}`);
   console.log(`PNG (${args.size}px):   ${pngPath}`);
   console.log("\nError correction: H (~30%)  ·  Quiet zone: 4 modules");

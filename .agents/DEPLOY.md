@@ -29,7 +29,7 @@ Everything below is typed into that same window.
 | HSTS | `max-age=31536000; includeSubDomains`, no `preload` |
 | Preview URL | none — `workers.dev` was turned off on 2026-09-01 (see "The workers.dev URL") |
 | Certificate | Google Trust Services `WE1`, issued by Cloudflare, auto-renewing |
-| Current version | `ada1deb5-1843-4094-8273-1229d94a137a`, deployed 2026-09-02 |
+| Current version | `62ad1330-11c8-4e42-ba30-97185cd46d14`, deployed 2026-09-02 |
 | Quote requests | delivered to Telegram, verified live — see `.agents/telegram-setup.md` |
 
 ---
@@ -221,6 +221,14 @@ redeploy needed.
 Skip this whole section if no QR-code videos exist yet. The site works fine without it;
 `/v/<anything>` simply shows "this link is no longer valid".
 
+> **As of 2026-09-02 this section has not been done.** No `CF_STREAM_*` secret is set,
+> no video is uploaded, and no link is registered — so `/v/` is inert, which is the
+> correct state for a site with no videos. It is blocked one step earlier than this
+> file: the Cloudflare API token in `.dev.vars` was created with **zone**-scoped
+> permissions, and Cloudflare Stream is an **account**-scoped API, so every Stream call
+> returns `403 Authorization Failure`. `pnpm video:stream doctor` diagnoses it in one
+> command. Fix the token first — `.agents/video-setup.md` step 1 — then come back here.
+
 ```bash
 npx wrangler secret put CF_STREAM_SIGNING_KEY_ID
 npx wrangler secret put CF_STREAM_SIGNING_KEY_PEM
@@ -232,6 +240,11 @@ npx wrangler secret put PRIVATE_VIDEO_LINKS            # optional
 `.agents/infra.md`: the OAuth token wrangler is logged in with has **no Cloudflare Stream
 scope**, so the signing key itself has to be created from the dashboard with an API token
 carrying `Stream:Edit` + `Account Settings:Read`.
+
+`PRIVATE_VIDEO_LINKS` is optional and rarely needed: links normally live in
+`src/lib/video/links.ts`, which stores the **hash** of each secret link rather than the
+link itself, because that file is public. The secret variant of the same JSON belongs in
+this Worker secret if you ever need to add or revoke a link without a code change.
 
 `CF_ACCOUNT_ID` and `CF_STREAM_API_TOKEN` from `.env.example` are **not** needed here,
 and should not be set here. They are local CLI credentials used only by
@@ -408,6 +421,10 @@ Every line must start with `200`.
 - [ ] `https://topcleaning.md/v/made-up-nonsense` shows "this link is no longer valid",
       not an error page and not a video.
 - [ ] A real QR link plays its video.
+- [ ] Every uploaded video reads `LOCKED` in `pnpm video:stream list` — check each one,
+      not just the last. A `PUBLIC` line is a video anyone with the ID can watch.
+- [ ] The unsigned delivery URL of each video — `https://<subdomain>/<UID>/manifest/video.m3u8`
+      — is **refused**. That is the lock that actually stops strangers.
 - [ ] Search Google for `site:topcleaning.md/v` — nothing should ever appear here.
 
 ---

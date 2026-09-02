@@ -13,10 +13,8 @@ export interface VideoClip {
   posterTime?: number;
 }
 
-/** One secret link: a token plus the ordered clips it plays. */
-export interface VideoLink {
-  /** The secret. URL-safe, >= 22 characters. Generate with `pnpm video:token`. */
-  token: string;
+/** Everything about a link except how its secret is stored. */
+interface VideoLinkBody {
   /** Optional heading shown above the player. */
   title?: LocalizedText;
   /** Optional paragraph shown under the heading. */
@@ -24,6 +22,25 @@ export interface VideoLink {
   /** Ordered list of videos. One entry is the common case. */
   clips: VideoClip[];
 }
+
+/**
+ * One secret link: a secret plus the ordered clips it plays.
+ *
+ * The secret is carried one of two ways, and the type is a union so that a
+ * given entry has to pick one:
+ *
+ * - `tokenHash` — the base64url SHA-256 of the token. **This is the only form
+ *   allowed in `src/lib/video/links.ts`**, which is committed to a public
+ *   repository. `loadVideoCatalog` drops any file entry that ships a plaintext
+ *   `token`, because that would publish the password.
+ * - `token` — the secret itself. Legal only in `PRIVATE_VIDEO_LINKS`, which is
+ *   a Worker secret and therefore a private place, and convenient in tests.
+ *
+ * Both resolve identically: a request's token is hashed and compared against
+ * the entry's hash. See `src/lib/video/catalog.ts`.
+ */
+export type VideoLink = VideoLinkBody &
+  ({ tokenHash: string; token?: undefined } | { token: string; tokenHash?: undefined });
 
 /** Order used when a locale has no translation for a given field. */
 export const FALLBACK_LOCALES = ["ro", "en", "ru"] as const;

@@ -21,13 +21,17 @@ const TOKEN_PATTERN = new RegExp(
   `^[A-Za-z0-9_-]{${MIN_TOKEN_LENGTH},${MAX_TOKEN_LENGTH}}$`,
 );
 
+/** URL-safe base64, no padding — the encoding used for both tokens and hashes. */
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 /** Cryptographically random, URL-safe, no padding. */
 export function generateToken(bytes: number = TOKEN_BYTES): string {
   if (bytes < 16) throw new Error("tokens need at least 16 bytes of entropy");
-  const raw = crypto.getRandomValues(new Uint8Array(bytes));
-  let binary = "";
-  for (let i = 0; i < raw.length; i += 1) binary += String.fromCharCode(raw[i]!);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return bytesToBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
 /**
@@ -37,6 +41,41 @@ export function generateToken(bytes: number = TOKEN_BYTES): string {
  */
 export function isWellFormedToken(value: unknown): value is string {
   return typeof value === "string" && TOKEN_PATTERN.test(value);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hashing                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * SHA-256 of a token, base64url encoded: 32 bytes -> 43 characters.
+ *
+ * This is what `src/lib/video/links.ts` stores instead of the token itself.
+ * That file is committed to a **public** GitHub repository, so a plaintext
+ * token there is a published password: gate 1 of the three (an unguessable
+ * link) collapses, and gate 2 collapses with it, because our own server will
+ * cheerfully sign a playback JWT for anybody who presents a token it recognises.
+ * A hash keeps the file honest — it is enough to *recognise* the token the
+ * visitor brings, and not enough to *produce* one.
+ *
+ * Unsalted and uniterated on purpose. A password hash needs a salt and a work
+ * factor because passwords are guessable; a token from `generateToken` carries
+ * 192 bits of uniform randomness, so there is no dictionary to try and nothing
+ * for a rainbow table to precompute. What would actually be wrong here is a
+ * *slow* hash: this runs on the request path, once per catalog entry.
+ */
+export const TOKEN_HASH_LENGTH = 43;
+
+const TOKEN_HASH_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${TOKEN_HASH_LENGTH}}$`);
+
+export async function hashToken(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return bytesToBase64Url(new Uint8Array(digest));
+}
+
+/** Shape check for a stored `tokenHash`. Reveals nothing; the hash is public. */
+export function isWellFormedTokenHash(value: unknown): value is string {
+  return typeof value === "string" && TOKEN_HASH_PATTERN.test(value);
 }
 
 /* -------------------------------------------------------------------------- */

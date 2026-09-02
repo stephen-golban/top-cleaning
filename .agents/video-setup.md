@@ -11,6 +11,26 @@ video later is only steps 5–9, and takes about five minutes.
 
 ---
 
+## Where this stands right now (2026-09-02)
+
+**Nothing is live yet, and the reason is step 1.**
+
+| Step | State |
+| ---- | ----- |
+| 1. API token | ✗ **Redo it.** A token exists in `.dev.vars` and Cloudflare accepts it, but its permissions were granted on **zones** instead of on the **account**. Cloudflare's Stream API lives at `/accounts/<id>/stream`, so the token cannot reach it: every Stream call comes back `403 Authorization Failure`. Run `pnpm video:stream doctor` to see this for yourself, then redo step 1. |
+| 2. Token in `.dev.vars` | ✓ done — the file and the variable name are correct |
+| 3–9 | ⏸ blocked on step 1. No signing key exists, no video is uploaded, no link is registered, no QR code has been made. `wrangler secret list` shows no `CF_STREAM_*` secret. |
+
+`/v/<anything>` on the live site therefore shows "this link is no longer valid", which is
+the correct behaviour for a site with no videos registered. The rest of the site is
+unaffected.
+
+The code around all of this **is** finished and deployed, including the change that made
+`links.ts` safe to have in a public repository (see step 8). When the token is fixed,
+steps 3–9 are about fifteen minutes of typing.
+
+---
+
 ## Before anything: where each value goes
 
 There are four Cloudflare values in this system and they do **not** all live in the same
@@ -59,6 +79,15 @@ Three separate locks, so that failing one does not expose a video.
    random characters — about as guessable as a bank card PIN with 58 digits. Nobody
    finds it by trying.
 
+   The website does not store that link. It stores a **hash** of it: a fingerprint
+   that can confirm the link a visitor arrives with, and cannot be turned back into
+   the link. This matters because the file the links live in,
+   `src/lib/video/links.ts`, is on GitHub where anybody can read it. A token written
+   there in plain text would be a published password — and it would take lock 2 down
+   with it, because our own server signs playback for whoever brings a token it
+   recognises. So the token goes on the QR code and in your password manager, and only
+   its hash goes in the file. The code refuses to serve an entry that breaks this.
+
 2. **Cloudflare refuses to play the video without permission from our server.** Each
    video is marked _"require signed URLs"_. Even somebody who learned the video's real
    ID cannot play it. When a client opens the secret link, our server signs a short
@@ -98,6 +127,13 @@ any of this. You need one new token, once.
 
    Both first dropdowns say **Account**. If a row says _Zone_ or _User_, change it.
 
+   > **This is the step that goes wrong.** A token whose rows say _Zone_ still shows
+   > `Stream: Edit` in the summary, is accepted by Cloudflare, and works for zone
+   > operations — and is completely useless here, because videos belong to the
+   > *account*, not to a domain. The error it produces says only "Authorization
+   > Failure", which reads like a missing permission rather than a misplaced one.
+   > That exact mistake blocked this feature on 2026-09-02.
+
 6. Under **Account Resources**, set the two dropdowns to **Include** and your account —
    `Golban.stephen@gmail.com's Account`. Do not leave it on _All accounts_.
 7. Leave **Client IP Address Filtering** and **TTL** empty.
@@ -106,6 +142,16 @@ any of this. You need one new token, once.
 9. **Create Token**.
 10. Cloudflare now shows the token **once and never again**. Copy it, and paste it
     straight into your password manager before you do anything else.
+
+**Then check it before going any further:**
+
+```bash
+pnpm video:stream doctor
+```
+
+It prints one line per thing that can be wrong — is the token valid, does it cover
+account `b8348ba8b3e65b3b3dd2ad6324a280f6`, does Stream answer — and never prints any
+part of the token. Do not start step 3 until all three lines say `[ok]`.
 
 ---
 
@@ -165,9 +211,22 @@ key **ID** but never the key itself: secrets belong in files, not on screens.
 
 ## Step 4 — Upload the video and lock it
 
-**Upload.** The easiest way is <https://dash.cloudflare.com> → **Stream** → **Videos** →
-**Upload video**, and drag the file in. There is no size limit through the dashboard.
-Wait for it to finish processing — a minute or two for a short clip.
+**Upload from the Terminal.** One command per file:
+
+```bash
+pnpm video:stream upload ~/Downloads/IMG_2549.MOV "Curatenie dupa reparatie"
+```
+
+It uploads the file with _"require signed URLs"_ already switched on, so the video is
+never — not even for a second — playable by anyone who guesses its ID. Then it waits for
+Cloudflare to finish encoding, reads the video back, and refuses to finish unless the lock
+really is on. It prints the 32-character ID at the end. Files up to 200 MB go this way;
+anything larger has to use the dashboard.
+
+**Or upload from the dashboard**, at <https://dash.cloudflare.com> → **Stream** →
+**Videos** → **Upload video**, dragging the file in. There is no size limit that way, but
+a video uploaded from the dashboard arrives **unlocked**, and you must lock it yourself
+with the command below.
 
 **Lock it immediately.** A freshly uploaded video is public to anyone who knows its ID.
 Nobody knows the ID yet, so there is no rush of seconds — but do not hand out any link,
@@ -191,9 +250,10 @@ pnpm video:stream list
 ```
 
 It must now say `LOCKED`. **Do not skip this check.** It is the lock that actually stops
-strangers, and it is the one people forget.
+strangers, and it is the one people forget. Check every video, one at a time — a single
+`PUBLIC` line in that list is a video anyone can watch.
 
-Keep that 32-character ID; step 6 needs it.
+Keep those 32-character IDs; step 8 needs them.
 
 ---
 
@@ -248,11 +308,22 @@ for them.
 ## Step 7 — Make the secret link
 
 ```bash
-pnpm video:token
+pnpm video:token --out qr-codes/curatenie.txt
 ```
 
-It prints a token, the three links that use it (`ro`, `ru`, `en` — all the same video),
-and a block of text ready to paste in the next step.
+Two values come out of this, and only one of them is a secret:
+
+- **the token** — the link itself. It is written to the file you named, which is inside
+  the gitignored `qr-codes` folder, and it is *not* printed on screen. Copy it into your
+  password manager. (The command refuses to write to any path git would not ignore.)
+- **the token hash** — a fingerprint of the token. It is printed, along with a block of
+  text ready to paste in the next step. The hash is not secret and is safe in git.
+
+Leave `--out` off and the token is printed on screen instead, which is fine at your own
+desk and not fine inside a Claude Code session — anything printed there is written into
+the transcript.
+
+All three links (`ro`, `ru`, `en`) use the same token and open the same video.
 
 ---
 
@@ -263,7 +334,7 @@ block the previous command printed and fill it in:
 
 ```ts
 {
-  token: "Zx7Q1s0oQ2mQF8N3yq2mVvJZQ0oJ1o1S",
+  tokenHash: "n4bQgYhMfWWaL-qgxVrQFaO_TxsrC4Is0V1sFbDwCgg",
   title: {
     ro: "Curățenie după reparație — metoda noastră",
     ru: "Уборка после ремонта — наш метод",
@@ -273,7 +344,12 @@ block the previous command printed and fill it in:
 },
 ```
 
-- `token` — from step 7.
+- `tokenHash` — the **hash** printed by step 7, never the token. This file is committed
+  to <https://github.com/stephen-golban/top-cleaning>, which is public: a token here is a
+  password on the internet. If you paste one by mistake the site refuses the entry
+  outright — the link 404s and a line starting `[video]` explains why in `wrangler tail` —
+  so the failure is a dead link rather than a leaked video. Fix it by putting the hash in
+  and generating a fresh token.
 - `uid` — the 32-character ID from step 4, **not** the filename.
 - `title` — optional. Leave it out and the page uses a generic heading.
 - `clips` — a list. Put several videos in it and the page shows a playlist:
@@ -299,8 +375,11 @@ Nothing was uploaded.
 ## Step 9 — Make the QR code, then test it
 
 ```bash
-pnpm video:qr Zx7Q1s0oQ2mQF8N3yq2mVvJZQ0oJ1o1S
+pnpm video:qr --token-file qr-codes/curatenie.txt
 ```
+
+(or `pnpm video:qr <TOKEN>` if you have the token to hand and are at your own Terminal —
+`--token-file` exists so the secret never appears on a command line.)
 
 Two files land in a `qr-codes` folder:
 
@@ -353,7 +432,9 @@ dashboard.
 | The page loads but the poster image is missing                    | The video is still processing, or `posterTime` is past the end of the video.                                                                                 |
 | The page loads, the poster shows, playing fails                   | The video is probably not marked as requiring signed URLs, or was deleted. Run `pnpm video:stream list`.                                                      |
 | `CF_STREAM_API_TOKEN is not set`                                  | Step 2. The line is missing from `.dev.vars`, or you are in the wrong folder.                                                                                 |
-| `Cloudflare refused the request (HTTP 403)`                       | The API token is missing the **Stream: Edit** permission. Redo step 1.                                                                                       |
+| `Cloudflare refused the request (HTTP 403)`                       | Run `pnpm video:stream doctor`. Almost always the token's permission rows were set to **Zone** instead of **Account**, or **Account Resources** was left blank. Redo step 1. |
+| "This link is no longer valid" and `wrangler tail` says `entry carries a plaintext token` | A token was pasted into `src/lib/video/links.ts` where the **hash** belongs. That file is public. Generate a fresh token (the pasted one must be considered burnt), put its `tokenHash` in the file, and redeploy. |
+| `refusing to write a token to …: git would not ignore it`         | `pnpm video:token --out` was pointed somewhere git would commit. Use a path inside `qr-codes/`.                                                              |
 | `⚠ .env.local defines N non-public variable(s)`                   | Something secret is in the file that gets published. Move those lines to `.dev.vars` and delete them from `.env.local`.                                       |
 | `pnpm deploy` stops with "the build bundled N non-public variable" | The same thing, caught at the last moment. Nothing was uploaded. Fix `.env.local` and deploy again.                                                          |
 | A video plays for someone who never got a link                    | Check `pnpm video:stream list` — it is `PUBLIC`. Lock it.                                                                                                     |
@@ -391,8 +472,10 @@ The feature itself:
 
 - `src/lib/stream.ts` — signs RS256 playback JWTs with Web Crypto (no `node:crypto`; this
   runs on the Workers runtime). Handles Cloudflare's base64-wrapped PEM.
-- `src/lib/video/tokens.ts` — token generation and constant-time lookup (double HMAC).
-- `src/lib/video/catalog.ts` — validates and merges `links.ts` with `PRIVATE_VIDEO_LINKS`.
+- `src/lib/video/tokens.ts` — token generation, SHA-256 hashing, and constant-time
+  lookup (double HMAC).
+- `src/lib/video/catalog.ts` — validates and merges `links.ts` with `PRIVATE_VIDEO_LINKS`,
+  and reduces both entry forms to one match key.
 - `src/lib/video/playback.ts` — the server/client boundary. Video UIDs stop here.
 - `src/app/[locale]/v/[token]/` — the page. `force-dynamic`, `noindex`, 404s identically
   for unknown, malformed, revoked and misconfigured links so it cannot be used as an
@@ -403,6 +486,19 @@ The feature itself:
 
 `PRIVATE_VIDEO_LINKS` is an escape hatch: the same JSON as `links.ts`, set as a Worker
 secret, for adding or revoking a link without touching code. Entries there win over
-entries in the file.
+entries in the file. Because it is a secret rather than a public file, an entry there may
+use `token` in plaintext as well as `tokenHash`; both reduce to the same match key, so a
+plaintext entry can override a hashed one for the same link.
+
+**Why `links.ts` stores a hash.** The repository is public. A token committed there is a
+password published on the internet, and it does not merely defeat gate 1 — it defeats
+gate 2 as well, because the Worker signs a playback JWT for anybody presenting a token it
+recognises. `hashToken` (SHA-256, base64url) is unsalted and uniterated on purpose: a
+`generateToken` token is 192 uniform random bits, so there is no dictionary to try and
+nothing to precompute, and the hash runs once per catalog entry on the request path where
+a slow KDF would be the wrong tool. `resolveVideoLink` hashes the URL's token once and
+sweeps the precomputed keys with the existing double-HMAC compare, so the constant-time
+property is unchanged. `catalog.ts` refuses any file entry carrying a plaintext `token`,
+and `catalog.test.mts` asserts the shipped file has none.
 
 **Anyone adding a `sitemap.ts` must leave `/v/` out of it.** There is no automatic guard.

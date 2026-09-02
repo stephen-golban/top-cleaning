@@ -6,8 +6,10 @@ import {
   parseVideoLinks,
   resetVideoCatalogCache,
   resolveVideoLink,
+  videoLinkKey,
 } from "./catalog.ts";
-import { generateToken } from "./tokens.ts";
+import { videoLinks as shippedLinks } from "./links.ts";
+import { generateToken, hashToken } from "./tokens.ts";
 import type { VideoLink } from "./types.ts";
 
 const UID = "ea95132c15732412d22c1476fa83f27a";
@@ -102,13 +104,26 @@ test("parseVideoLinks refuses anything that is not an array", () => {
   }
 });
 
-test("mergeVideoLinks lets a later source override the same token", () => {
+test("mergeVideoLinks lets a later source override the same token", async () => {
   const token = generateToken();
   const fromFile: VideoLink = { token, clips: [{ uid: UID }], title: { en: "old" } };
   const fromEnv: VideoLink = { token, clips: [{ uid: UID }], title: { en: "new" } };
-  const merged = mergeVideoLinks([fromFile], [fromEnv]);
+  const merged = await mergeVideoLinks([fromFile], [fromEnv]);
   assert.equal(merged.length, 1);
   assert.equal(merged[0]!.title?.en, "new");
+});
+
+test("mergeVideoLinks matches a hashed entry against a plaintext one", async () => {
+  const token = generateToken();
+  const hashed: VideoLink = {
+    tokenHash: await hashToken(token),
+    clips: [{ uid: UID }],
+    title: { en: "from links.ts" },
+  };
+  const plain: VideoLink = { token, clips: [{ uid: UID }], title: { en: "from env" } };
+  const merged = await mergeVideoLinks([hashed], [plain]);
+  assert.equal(merged.length, 1, "the two forms are the same link");
+  assert.equal(merged[0]!.title?.en, "from env");
 });
 
 test("resolveVideoLink finds a known token", async () => {
@@ -132,10 +147,10 @@ test("resolveVideoLink is case-sensitive", async () => {
   assert.equal((await resolveVideoLink(only.token, [only]))?.token, only.token);
 });
 
-test("loadVideoCatalog picks up PRIVATE_VIDEO_LINKS", () => {
+test("loadVideoCatalog picks up PRIVATE_VIDEO_LINKS", async () => {
   resetVideoCatalogCache();
   const token = generateToken();
-  const catalog = loadVideoCatalog({
+  const catalog = await loadVideoCatalog({
     PRIVATE_VIDEO_LINKS: JSON.stringify([{ token, clips: [{ uid: UID }] }]),
   });
   assert.equal(catalog.length, 1);
@@ -143,19 +158,86 @@ test("loadVideoCatalog picks up PRIVATE_VIDEO_LINKS", () => {
   resetVideoCatalogCache();
 });
 
-test("loadVideoCatalog survives invalid JSON in the environment", () => {
+test("loadVideoCatalog resolves a hashed entry from the environment", async () => {
   resetVideoCatalogCache();
-  const catalog = loadVideoCatalog({ PRIVATE_VIDEO_LINKS: "{not json" });
+  const token = generateToken();
+  const catalog = await loadVideoCatalog({
+    PRIVATE_VIDEO_LINKS: JSON.stringify([
+      { tokenHash: await hashToken(token), clips: [{ uid: UID }] },
+    ]),
+  });
+  const found = await resolveVideoLink(token, catalog);
+  assert.equal(found?.clips[0]?.uid, UID);
+  assert.equal(found?.token, undefined, "the plaintext token is never stored");
+  resetVideoCatalogCache();
+});
+
+test("loadVideoCatalog survives invalid JSON in the environment", async () => {
+  resetVideoCatalogCache();
+  const catalog = await loadVideoCatalog({ PRIVATE_VIDEO_LINKS: "{not json" });
   assert.deepEqual(catalog, []);
   resetVideoCatalogCache();
 });
 
-test("the checked-in links file contains no live entries and no weak tokens", () => {
-  resetVideoCatalogCache();
-  const catalog = loadVideoCatalog({});
-  for (const entry of catalog) {
-    assert.ok(entry.token.length >= 22, "shipped token is too short");
+test("the checked-in links file never carries a plaintext token", () => {
+  // The guard that keeps the secret out of a public repository. `links.ts` is
+  // on GitHub; a token there is a published password, and publishing it also
+  // defeats the signed-URL layer, because the site signs playback for whoever
+  // presents a token it recognises.
+  for (const entry of shippedLinks) {
+    assert.equal(
+      entry.token,
+      undefined,
+      "src/lib/video/links.ts must store tokenHash, never token",
+    );
+    assert.ok(entry.tokenHash, "every shipped entry needs a tokenHash");
     assert.ok(entry.clips.length > 0);
   }
-  resetVideoCatalogCache();
+});
+
+test("a plaintext token in the public links file is refused, not served", async () => {
+  const token = generateToken();
+  const entry = { token, clips: [{ uid: UID }] };
+
+  const permissive = parseVideoLinks([entry]);
+  assert.equal(permissive.links.length, 1, "fine in PRIVATE_VIDEO_LINKS");
+
+  const strict = parseVideoLinks([entry], { requireHashedTokens: true });
+  assert.equal(strict.links.length, 0, "refused in links.ts");
+  assert.match(strict.warnings[0]!.problem, /plaintext token/);
+  assert.ok(!strict.warnings[0]!.problem.includes(token), "and never echoed");
+});
+
+test("parseVideoLinks validates the shape of a tokenHash", async () => {
+  const good = { tokenHash: await hashToken(generateToken()), clips: [{ uid: UID }] };
+  assert.equal(parseVideoLinks([good], { requireHashedTokens: true }).links.length, 1);
+
+  for (const bad of ["", "too-short", "a".repeat(44), "a".repeat(43) + "!", 7]) {
+    const { links, warnings } = parseVideoLinks([
+      { tokenHash: bad, clips: [{ uid: UID }] },
+    ]);
+    assert.equal(links.length, 0, JSON.stringify(bad));
+    assert.match(warnings[0]!.problem, /tokenHash|token/);
+  }
+
+  const both = {
+    tokenHash: good.tokenHash,
+    token: generateToken(),
+    clips: [{ uid: UID }],
+  };
+  assert.match(parseVideoLinks([both]).warnings[0]!.problem, /not both/);
+});
+
+test("resolveVideoLink matches a token against its hash", async () => {
+  const token = generateToken();
+  const only: VideoLink = { tokenHash: await hashToken(token), clips: [{ uid: UID }] };
+  assert.equal((await resolveVideoLink(token, [only]))?.tokenHash, only.tokenHash);
+  assert.equal(await resolveVideoLink(generateToken(), [only]), null);
+});
+
+test("videoLinkKey is the same for both forms of the same link", async () => {
+  const token = generateToken();
+  const hash = await hashToken(token);
+  assert.equal(await videoLinkKey({ token, clips: [{ uid: UID }] }), hash);
+  assert.equal(await videoLinkKey({ tokenHash: hash, clips: [{ uid: UID }] }), hash);
 });

@@ -582,3 +582,114 @@ The bot token leaked into the `fdaf2174` Worker bundle (wave 7, item 5) has been
 One more test message is now in the owner's Telegram, in Romanian, saying it is a token
 rotation test and using the company's own public number `079 022 023`. Delete it, along
 with the three from `ada1deb5`, whenever convenient.
+
+---
+
+# Wave 9 — the private video feature: blocked at step 1, and `links.ts` hardened (2026-09-02)
+
+The task was steps 3–9 of `.agents/video-setup.md`: mint a signing key, upload three
+clips locked, register them as one playlist behind one QR code, deploy, and prove
+playback works and unsigned access does not. **None of that happened, because step 1 is
+not actually done.**
+
+## The blocker
+
+The `CF_STREAM_API_TOKEN` in `.dev.vars` is a real, active Cloudflare API token — but its
+permissions were granted on **zones**, not on the **account**:
+
+- `GET /user/tokens/verify` → `200 active`
+- `GET /zones` → 200, five zones, four of them reporting `#stream:edit`
+- `GET /accounts` → **200 with an empty list** — the token is scoped to no account at all
+- `GET /accounts/b8348ba8b3e65b3b3dd2ad6324a280f6/stream` → **403 `10002`**
+
+Cloudflare Stream is an account-scoped API (`/accounts/<id>/stream`), so a zone-scoped
+`Stream:Edit` authorises nothing here. The 403 says only "Authorization Failure", which
+reads as a *missing* permission rather than a *misplaced* one — which is why this cost an
+hour. The `wrangler` OAuth token was checked as an alternative and has no `stream` scope
+at all (confirmed against the live API, not just `wrangler whoami`).
+
+**To unblock:** redo `.agents/video-setup.md` step 1 with both permission rows set to
+`Account`, and `Account Resources` set to `Include | Golban.stephen@gmail.com's Account`.
+Then `pnpm video:stream doctor`, which was added for exactly this and prints one `[ok]` /
+`[FAIL]` line per failure mode without ever printing the token.
+
+## Closed by this wave
+
+1. **`src/lib/video/links.ts` no longer holds a plaintext token.** This was a real
+   weakness, not a theoretical one: the repository is public
+   (<https://github.com/stephen-golban/top-cleaning>), so the documented design — paste
+   the token into `links.ts` and commit — published the password with the code. And it
+   took the *second* gate down with it, because the Worker signs a playback JWT for
+   whoever presents a token it recognises; "the videos are still protected by signed
+   URLs" would have been false. The file now stores `tokenHash`, the base64url SHA-256 of
+   the token. `resolveVideoLink` hashes the token off the URL and compares hashes.
+2. **The constant-time property is preserved.** Both entry forms reduce to one match key
+   (`videoLinkKey`), the keys are precomputed with the catalog, and the lookup is the same
+   double-HMAC `timingSafeIndexOf` sweep as before — now over two fixed-length hashes, so
+   it costs the same whatever the token was.
+3. **The mistake is refused, not merely discouraged.** A file entry carrying a plaintext
+   `token` is dropped at load with a warning naming the reason, so the failure is a dead
+   link somebody investigates rather than a leaked video. `catalog.test.mts` asserts the
+   shipped file has no plaintext token; `tokens.test.mts` pins the Worker's Web Crypto
+   hash to the CLI's `node:crypto` hash, since a disagreement there would 404 every link.
+4. **The CLI keeps the secret in files.** `pnpm video:token --out FILE` writes the token
+   to a gitignored file (it asks `git check-ignore` and refuses otherwise) and prints only
+   the hash; `pnpm video:qr --token-file FILE` reads it back, so the token never appears
+   on a command line or in a session transcript.
+5. **`pnpm video:stream upload <FILE>`** now exists: it uploads with `requireSignedURLs`
+   set *in the upload request*, so a video is never briefly public, then waits for
+   encoding and refuses to report success unless it reads the lock back on.
+6. **Deployed** as `62ad1330-11c8-4e42-ba30-97185cd46d14`, with the full regression sweep
+   green (below).
+
+## Verified
+
+- **The hashed lookup works on the Workers runtime**, not just in unit tests. Built with
+  `opennextjs-cloudflare` and served under `wrangler dev` with a throwaway RSA signing key
+  and a `PRIVATE_VIDEO_LINKS` entry holding only a `tokenHash`: the matching token got
+  `200` with the localised title and a two-clip playlist rendered, a non-matching token
+  got `404`, and neither Stream UID appeared anywhere in the HTML. The fixtures were
+  removed afterwards and `.dev.vars` restored byte-identical (checksum compared).
+- **Live regression sweep after deploy.** `/ro` `/ru` `/en` → 200. `http://` → 308 →
+  HTTPS. `www` → 308 → apex. All six legacy redirect shapes → 308 → 200 at the right
+  destination. `sitemap.xml`: 24 URLs, zero `/v/`. `robots.txt` still carries
+  `Disallow: /v/`. An invalid `/v/` token → 404 with `x-robots-tag: noindex, nofollow,
+  noarchive, nosnippet`, `referrer-policy: no-referrer` and the no-store `Cache-Control`,
+  and no token echoed into the body.
+- **`wrangler secret list`** is `QUOTE_NOTIFY_EMAIL`, `TELEGRAM_BOT_TOKEN`,
+  `TELEGRAM_CHAT_ID` — no `CF_STREAM_*`, as expected while step 1 is unfixed, and no
+  `CF_STREAM_API_TOKEN` or `CF_ACCOUNT_ID`, which must never be there.
+
+## Not verified, and why
+
+- **Real playback.** No signing key exists and no video is uploaded, so there was nothing
+  to play. Unchanged from waves 3 and 5: this is still the one part of the site never
+  exercised for real.
+- **That an unsigned Cloudflare delivery URL is refused.** This is the security claim the
+  owner is relying on and it is still *asserted, not tested* — there is no video to test
+  it against. Test it the moment the first upload lands: fetch
+  `https://<customer subdomain>/<UID>/manifest/video.m3u8` with no token, for each UID,
+  and require a refusal. It is on the DEPLOY.md checklist now.
+- **`pnpm video:stream upload` has never run against Cloudflare.** It is written and
+  type-checked but the 403 blocks the only thing that would exercise it. Treat the first
+  run as a test: it prints the UID and asserts the lock, so a failure is loud.
+- **The three source clips were not touched**: `IMG_2549.MOV` (12s, 1080×1920, 23 MB),
+  `IMG_2615.MOV` (65s, 848×478, 11 MB), `IMG_2559.MOV` (76s, 1080×1920, 129 MB). All three
+  are under the 200 MB single-request upload limit. The intended playlist order is
+  2549 → 2615 → 2559, all behind one token.
+
+## Decisions this wave took, that a later wave should not silently undo
+
+1. **`links.ts` stores hashes, and that is not negotiable while the repo is public.** If
+   someone "simplifies" it back to plaintext tokens, every link in the file is a published
+   password. The load-time refusal and the test exist to make that hard to do by accident.
+2. **The hash is unsalted SHA-256, deliberately.** Not an oversight and not a place for
+   bcrypt/argon2: the input is 192 uniform random bits, so there is no dictionary and
+   nothing to precompute, and this runs on the request path once per catalog entry.
+3. **`PRIVATE_VIDEO_LINKS` may still carry plaintext tokens.** It is a Worker secret, not
+   a public file, and keeping that form means a link can be added or revoked in one
+   command. Both forms reduce to the same key, so either can override the other.
+4. **`loadVideoCatalog` and `mergeVideoLinks` are async now.** Hashing is async on Web
+   Crypto and there is no synchronous SHA-256 in the Workers runtime. The catalog and its
+   keys are computed once per environment value and memoised, so this is not per-request
+   work.

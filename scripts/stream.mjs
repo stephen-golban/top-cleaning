@@ -2,11 +2,12 @@
 /**
  * Cloudflare Stream operator helper.
  *
- *   pnpm video:stream keys        # create a signing key, save it to .dev.vars
- *   pnpm video:stream list        # list videos and whether each is locked
- *   pnpm video:stream lock <UID>  # turn on requireSignedURLs for one video
- *   pnpm video:stream subdomain   # print CF_STREAM_CUSTOMER_SUBDOMAIN
- *   pnpm video:stream check <UID> # mint a token locally and print a test URL
+ *   pnpm video:stream keys          # create a signing key, save it to .dev.vars
+ *   pnpm video:stream upload <FILE> # upload a video, locked, and wait for encoding
+ *   pnpm video:stream list          # list videos and whether each is locked
+ *   pnpm video:stream lock <UID>    # turn on requireSignedURLs for one video
+ *   pnpm video:stream subdomain     # print CF_STREAM_CUSTOMER_SUBDOMAIN
+ *   pnpm video:stream check <UID>   # mint a token locally and print a test URL
  *
  * There are two kinds of Stream credential here and the difference is the whole
  * point of this file:
@@ -36,7 +37,7 @@
  *
  * See `.agents/video-setup.md` for the full walkthrough.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, openAsBlob, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import {
@@ -189,7 +190,8 @@ async function cf(pathname, init = {}) {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      // Only for JSON. A FormData body must set its own multipart boundary.
+      ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...init.headers,
     },
   });
@@ -200,8 +202,14 @@ async function cf(pathname, init = {}) {
     if (response.status === 403 || response.status === 401) {
       fail(
         `Cloudflare refused the request (HTTP ${response.status}).\n` +
-          `  ${detail ?? "no detail"}\n` +
-          "  The API token almost certainly lacks the Stream:Edit permission.\n" +
+          `  ${detail ?? "no detail"}\n\n` +
+          "  The Stream API is ACCOUNT-scoped. The two things that cause this:\n" +
+          "    1. the token's permission rows are not `Account -> Stream -> Edit`\n" +
+          "       (a row set to Zone grants #stream:edit on zones, which does not\n" +
+          "       authorise /accounts/<id>/stream at all); or\n" +
+          "    2. `Account Resources` was left unset, so the token covers no\n" +
+          `       account — including ${account}.\n\n` +
+          "  Run `pnpm video:stream doctor` to see which of the two it is.\n" +
           "  See .agents/video-setup.md step 1.",
       );
     }
@@ -305,14 +313,204 @@ async function check(uid) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Upload                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Cloudflare's limit for a single-request upload. Above it, use the dashboard. */
+const MAX_DIRECT_UPLOAD_BYTES = 200 * 1024 * 1024;
+
+/** How long to wait for Cloudflare to finish encoding before giving up. */
+const ENCODE_TIMEOUT_MS = 30 * 60 * 1000;
+const POLL_INTERVAL_MS = 5000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Upload one video and lock it in the same breath.
+ *
+ * `requireSignedURLs` is set in the upload request itself rather than after the
+ * fact, so the video is never, even briefly, playable by UID alone. It is then
+ * read back and asserted, because "I set the flag" and "the flag is set" are
+ * different claims and only the second one is the security property.
+ */
+async function uploadVideo(file, name) {
+  if (!file) fail("usage: pnpm video:stream upload <FILE> [name]");
+
+  const resolved = path.resolve(process.cwd(), file);
+  if (!existsSync(resolved)) fail(`no such file: ${resolved}`);
+
+  const { size } = statSync(resolved);
+  if (size > MAX_DIRECT_UPLOAD_BYTES) {
+    fail(
+      `${path.basename(resolved)} is ${(size / 1024 / 1024).toFixed(0)} MB; the\n` +
+        `  single-request upload limit is ${MAX_DIRECT_UPLOAD_BYTES / 1024 / 1024} MB.\n` +
+        "  Upload it in the Stream dashboard instead, then run:\n" +
+        "    pnpm video:stream lock <UID>",
+    );
+  }
+
+  const label = name ?? path.basename(resolved);
+  console.log(
+    `\nUploading ${path.basename(resolved)} (${(size / 1024 / 1024).toFixed(1)} MB) as "${label}"…`,
+  );
+
+  const form = new FormData();
+  form.set("file", await openAsBlob(resolved), path.basename(resolved));
+  form.set("requireSignedURLs", "true");
+  form.set("meta", JSON.stringify({ name: label }));
+
+  const created = await cf("/stream", { method: "POST", body: form });
+  console.log(`  uploaded. UID: ${created.uid}`);
+
+  // Belt and braces: if the form field were ever ignored, this closes the gap.
+  if (!created.requireSignedURLs) {
+    console.log("  the upload did not come back locked — locking it now.");
+    await cf(`/stream/${created.uid}`, {
+      method: "POST",
+      body: JSON.stringify({ requireSignedURLs: true }),
+    });
+  }
+
+  const video = await waitForReady(created.uid);
+
+  if (!video.requireSignedURLs) {
+    fail(
+      `${video.uid} is NOT locked. It is playable by anyone who learns the UID.\n` +
+        `  Run: pnpm video:stream lock ${video.uid}`,
+    );
+  }
+
+  console.log(
+    `\n✓ ${video.uid}  LOCKED  ready  ${Math.round(video.duration ?? 0)}s  ` +
+      `${video.input?.width ?? "?"}x${video.input?.height ?? "?"}`,
+  );
+  console.log("\nRegister it in src/lib/video/links.ts as:");
+  console.log(`  clips: [{ uid: "${video.uid}" }]\n`);
+}
+
+/** Poll until Cloudflare has finished encoding, reporting progress as it goes. */
+async function waitForReady(uid) {
+  const deadline = Date.now() + ENCODE_TIMEOUT_MS;
+  let lastReported = -1;
+
+  for (;;) {
+    const video = await cf(`/stream/${uid}`);
+    if (video.readyToStream) return video;
+
+    const state = video.status?.state ?? "unknown";
+    if (state === "error") {
+      fail(
+        `Cloudflare could not encode ${uid}: ` +
+          `${video.status?.errorReasonText ?? "no reason given"}`,
+      );
+    }
+
+    const pct = Number.parseInt(video.status?.pctComplete ?? "", 10);
+    if (Number.isFinite(pct) && pct !== lastReported) {
+      console.log(`  encoding… ${pct}%`);
+      lastReported = pct;
+    }
+
+    if (Date.now() > deadline) {
+      fail(
+        `${uid} was still ${state} after 30 minutes.\n` +
+          "  It is uploaded and locked; check `pnpm video:stream list` later.",
+      );
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Doctor                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Say precisely which of the ways an API token can be wrong is the one in play.
+ *
+ * This exists because a token can be perfectly valid, and even carry
+ * `#stream:edit`, and still be useless here: if its permission rows were set to
+ * `Zone` rather than `Account`, Cloudflare grants Stream on zones, and the
+ * Stream API lives under `/accounts/<id>/stream`. The 403 that comes back says
+ * only "Authorization Failure", which sends people to re-check the permission
+ * they already have. Nothing below prints any part of the token.
+ */
+async function doctor() {
+  const account = accountId();
+  const token = apiToken();
+  const auth = { Authorization: `Bearer ${token}` };
+
+  const probe = async (pathname) => {
+    const response = await fetch(`${API}${pathname}`, { headers: auth });
+    const body = await response.json().catch(() => null);
+    return { ok: response.ok && body?.success === true, status: response.status, body };
+  };
+
+  console.log(`\nAccount:  ${account}`);
+  console.log(`Token:    present (${token.length} characters, never printed)\n`);
+
+  const verify = await probe("/user/tokens/verify");
+  console.log(
+    verify.ok
+      ? `  [ok]   the token is valid and ${verify.body.result.status}`
+      : `  [FAIL] Cloudflare does not accept this token (HTTP ${verify.status})`,
+  );
+  if (!verify.ok) {
+    return fail("the token is invalid or revoked. Redo .agents/video-setup.md step 1.");
+  }
+
+  const accounts = await probe("/accounts");
+  const ids = accounts.ok ? accounts.body.result.map((entry) => entry.id) : [];
+  if (!accounts.ok) {
+    console.log(`  [FAIL] cannot list accounts (HTTP ${accounts.status})`);
+    console.log("         the token is missing `Account Settings: Read`.");
+  } else if (ids.length === 0) {
+    console.log("  [FAIL] the token is scoped to NO account.");
+    console.log("         Its permission rows are Zone-level, or `Account Resources`");
+    console.log("         was left unset. The Stream API is account-scoped, so it");
+    console.log("         cannot work from here whatever permissions it holds.");
+  } else if (!ids.includes(account)) {
+    console.log(`  [FAIL] the token covers ${ids.length} account(s), not ${account}.`);
+  } else {
+    console.log(`  [ok]   the token covers account ${account}`);
+  }
+
+  const stream = await probe(`/accounts/${account}/stream?limit=1`);
+  console.log(
+    stream.ok
+      ? "  [ok]   Stream: Edit works on this account"
+      : `  [FAIL] Stream is refused on this account (HTTP ${stream.status})`,
+  );
+
+  if (verify.ok && accounts.ok && ids.includes(account) && stream.ok) {
+    console.log(
+      "\nEverything checks out. Carry on at .agents/video-setup.md step 3.\n",
+    );
+    return;
+  }
+
+  fail(
+    "make a new token at https://dash.cloudflare.com/profile/api-tokens with\n" +
+      "  BOTH permission rows set to `Account` (not Zone):\n" +
+      "      Account | Stream           | Edit\n" +
+      "      Account | Account Settings | Read\n" +
+      "  and `Account Resources` set to `Include | <your account>`.\n" +
+      "  Then replace CF_STREAM_API_TOKEN in .dev.vars. Full instructions:\n" +
+      "  .agents/video-setup.md step 1.",
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 
 const USAGE = `Usage: pnpm video:stream <command>
 
-  keys            Create a Stream signing key and save it to .dev.vars
-  list            List videos and show which require signed URLs
-  lock <UID>      Require signed URLs for one video
-  subdomain       Print the CF_STREAM_CUSTOMER_SUBDOMAIN for this account
-  check [UID]     Verify the local signing config; mint a test URL if given a UID
+  doctor            Explain exactly why the API token is or is not usable
+  keys              Create a Stream signing key and save it to .dev.vars
+  upload <FILE> [N] Upload a video with signed URLs required, and wait for encoding
+  list              List videos and show which require signed URLs
+  lock <UID>        Require signed URLs for one video
+  subdomain         Print the CF_STREAM_CUSTOMER_SUBDOMAIN for this account
+  check [UID]       Verify the local signing config; mint a test URL if given a UID
 
 Credentials are read from .dev.vars (never .env.local, which is bundled into the
 deployed Worker). See .agents/video-setup.md.`;
@@ -320,12 +518,16 @@ deployed Worker). See .agents/video-setup.md.`;
 async function main() {
   loadEnv();
   warnAboutLegacyEnvFile();
-  const [command, argument] = process.argv.slice(2);
+  const [command, argument, ...rest] = process.argv.slice(2);
 
   switch (command) {
+    case "doctor":
+      return doctor();
     case "keys":
     case "keys:create":
       return createKey();
+    case "upload":
+      return uploadVideo(argument, rest.join(" ") || undefined);
     case "list":
       return listVideos();
     case "lock":
