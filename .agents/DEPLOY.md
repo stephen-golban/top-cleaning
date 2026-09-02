@@ -240,6 +240,20 @@ Skip this whole section if no QR-code videos exist yet. The site works fine with
 >
 > The lesson for anything in this file: when a `/v/` link 404s, **run `wrangler tail`
 > and open the link**. The page is designed not to tell you why.
+>
+> **The link token was rotated later the same day** (version
+> `b83f2503-f8b1-44f3-a58c-2f32b94855cc`), because the original had been printed into an
+> assistant's conversation transcript. The videos themselves were never exposed — they
+> are locked with `requireSignedURLs` — but the link was, so it was burned and replaced.
+> The old link now 404s, verified against the live site. **Any QR printed before that
+> rotation is a dead card.** The procedure, and the trap that a fresh Worker version
+> takes a minute or two to reach every edge (probe too early and the old link still
+> answers 200), are under "Rotating a link token" in `.agents/video-setup.md`.
+>
+> A third thing to carry away, beyond the two above: **never read a token file to
+> stdout.** The leak came from a command that stripped a secrets file's comments and
+> printed the remainder. Use `--token-file` and `< file` redirection, and verify a link
+> by its status code rather than by looking at its value.
 
 ```bash
 npx wrangler secret put CF_STREAM_SIGNING_KEY_ID
@@ -257,6 +271,11 @@ carrying `Stream:Edit` + `Account Settings:Read`.
 `src/lib/video/links.ts`, which stores the **hash** of each secret link rather than the
 link itself, because that file is public. The secret variant of the same JSON belongs in
 this Worker secret if you ever need to add or revoke a link without a code change.
+
+It is **not set** on this Worker today, which is what makes editing `links.ts` a complete
+revocation. If you ever do set it, remember that an entry there overrides the file — so
+rotating a token in `links.ts` alone would leave the old link alive. Check with
+`npx wrangler secret list` before trusting a rotation.
 
 `CF_ACCOUNT_ID` and `CF_STREAM_API_TOKEN` from `.env.example` are **not** needed here,
 and should not be set here. They are local CLI credentials used only by
@@ -437,6 +456,10 @@ Every line must start with `200`.
       the poster is a still and it is signed separately from the video.
 - [ ] Every uploaded video reads `LOCKED` in `pnpm video:stream list` — check each one,
       not just the last. A `PUBLIC` line is a video anyone with the ID can watch.
+- [ ] **If you have just rotated a token: the OLD link returns 404.** This is the only
+      check that proves a rotation happened, and it is the one people skip. Give the
+      deploy a minute or two first — a new Worker version takes a moment to reach every
+      edge, and probing too early shows the old link still answering 200.
 - [ ] The unsigned delivery URL of each video — `https://<subdomain>/<UID>/manifest/video.m3u8`
       — is **refused**. That is the lock that actually stops strangers:
 

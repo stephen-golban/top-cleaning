@@ -13,7 +13,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs --test \"src/**/*.test.mts\"",
+    "test": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs --test \"src/**/*.test.mts\" \"scripts/**/*.test.mts\"",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:build-env": "node scripts/check-build-env.mjs",
     "fonts:build": "python3 scripts/build-fonts.py",

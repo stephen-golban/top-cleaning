@@ -15,6 +15,25 @@ video later is only steps 5–9, and takes about five minutes.
 
 **Done and live.** One QR link is registered and it plays three videos as a playlist.
 
+> **The link token was rotated on 2026-09-02, after the original was created.** The first
+> token had been printed into an assistant's conversation transcript, so it had to be
+> treated as public and replaced. The three videos were never at risk — they are `LOCKED`
+> with `requireSignedURLs`, so a leaked token grants exactly what a scanned QR code grants
+> and nothing more — but anyone holding that transcript could have watched them.
+>
+> The old token is dead: its `/v/` link now returns the ordinary 404, confirmed against
+> the live site. The old token file was securely erased and the QR artefacts were
+> overwritten in place, so no printable code encoding the old link survives. **Any QR
+> already printed from before that date is now a dead card and must be reprinted.**
+> The current token is in `qr-codes/portofoliu.txt` and the current QR is
+> `qr-codes/portofoliu.svg` / `.png`. See "Rotating a link token" below for the procedure.
+>
+> The lesson, and the reason this happened: the leak came from a command that stripped a
+> secrets file's comment lines and printed the remainder. **Never read a token file to
+> stdout** — not with `cat`, `grep`, `tr` or a pipeline. Move tokens between tools with
+> `--token-file` and `< file` redirection, and verify by effect (a status code) rather
+> than by looking at the value.
+
 | Step | State |
 | ---- | ----- |
 | 1–2. API token | ✓ done — recreated with **account**-scoped rows; `pnpm video:stream doctor` reports all three checks green |
@@ -488,6 +507,62 @@ working within a minute. Any QR code already printed becomes a dead card — it 
 
 The video itself stays in Cloudflare. To remove it entirely, delete it from the Stream
 dashboard.
+
+---
+
+## Rotating a link token
+
+Do this when a token has been exposed — printed into a transcript or a log, emailed,
+pasted into a chat, or handed to someone who should no longer have it. Rotating replaces
+the link; it does not touch the videos, which stay uploaded and stay `LOCKED`.
+
+Rotation is cheap, so do it on suspicion rather than on proof. The only real cost is that
+**every QR code already printed from the old token becomes a dead card.**
+
+```bash
+# 1. New token. It never appears in the terminal, only in the gitignored file.
+#    Move the old file aside first — `--out` appends, and the old token must not
+#    survive in the file the QR script reads.
+mv qr-codes/portofoliu.txt qr-codes/BURNED-old-token.txt
+pnpm video:token --out qr-codes/portofoliu.txt
+
+# 2. Put the new TOKEN_HASH into the entry in src/lib/video/links.ts, keeping the
+#    same clips in the same order. Copy the hash from the file — do not print the
+#    file to read it. Only the hash goes in git; the token never does.
+
+# 3. Publish. The old link dies the moment this lands.
+pnpm deploy
+
+# 4. New QR, over the same filenames so no stale image can be printed by mistake.
+pnpm video:qr --token-file qr-codes/portofoliu.txt
+
+# 5. Erase the old token, once you have verified the rotation below.
+rm -P qr-codes/BURNED-old-token.txt
+```
+
+Then verify — and the check that actually matters is the negative one:
+
+- **The old link returns 404.** Nothing else proves the rotation did anything. Allow a
+  minute or two: a fresh Worker version takes a short while to reach every edge, and
+  during that window the old link still answers 200. On 2026-09-02 the first probe ran
+  too early and showed exactly that; re-probing a couple of minutes later showed the
+  intended `404` on the old link and `200` on the new one.
+- The new link returns 200 in `ro`, `ru` and `en`, still carrying
+  `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet`.
+- The video genuinely plays — press play and watch it move, or drive a headless browser
+  and confirm media bytes actually flow. A 200 on the page proves only that the HTML
+  rendered.
+- The new QR decodes to the new link, and the SVG and PNG agree.
+- All clips still read `LOCKED` in `pnpm video:stream list`.
+
+Nothing else needs redoing: the signing key, the Worker secrets and the Stream videos are
+all independent of the link token.
+
+There is no `PRIVATE_VIDEO_LINKS` Worker secret set on this account — checked with
+`wrangler secret list` — so `src/lib/video/links.ts` is the only source of links, and
+replacing the entry there is a complete revocation. **If that secret is ever set, rotating
+`links.ts` alone is not enough**; an entry there overrides the file and would keep an old
+token alive.
 
 ---
 

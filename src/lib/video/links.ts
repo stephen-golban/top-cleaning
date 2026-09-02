@@ -46,7 +46,7 @@ import type { VideoLink } from "./types";
  */
 export const videoLinks: VideoLink[] = [
   {
-    tokenHash: "nTToeXxPTSDSgt1AcIbj9sleJPSeNgBzvsDLw9GJ4N8",
+    tokenHash: "wFKNb659G3b4apLOz2Q_qLzj5sxxRE8vtE0qJT3qlyU",
     title: {
       ro: "Din activitatea noastră",
       ru: "Из нашей работы",

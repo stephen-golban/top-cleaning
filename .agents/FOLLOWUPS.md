@@ -709,13 +709,10 @@ what was untested and why is the useful part of the record.
 
 ## Opened by the video wave (2026-09-02)
 
-1. **`scripts/stream.mjs` has no tests, and it now does something load-bearing.** `keys`
-   converts Cloudflare's PKCS#1 signing key into the PKCS#8 the Workers runtime requires.
-   Get that wrong and the site fails closed: every `/v/` link 404s, and the reason is
-   visible only in `wrangler tail`. `pnpm test` globs `src/**/*.test.mts`, so nothing
-   covers `scripts/`. Worth a test that round-trips a generated PKCS#1 key through
-   `toPkcs8Pem` into `crypto.subtle.importKey` — precisely the assertion that would have
-   caught this before it reached production rather than after.
+1. ~~**`scripts/stream.mjs` has no tests, and it now does something load-bearing.**~~
+   **Closed 2026-09-02 by the rotation wave** — see "Wave 10" below. `toPkcs8Pem` is
+   exported and covered by `scripts/stream.test.mts`, and `pnpm test` now globs
+   `scripts/**/*.test.mts` as well as `src/**/*.test.mts`.
 2. **Clip 2 (`IMG_2615.MOV`) is 848×478.** Knowingly accepted; it is the only copy that
    exists. It sits between two 1080×1920 portrait clips, so it is noticeably softer, and
    Cloudflare cannot add detail that was never filmed. If a better master appears, upload
@@ -727,3 +724,90 @@ what was untested and why is the useful part of the record.
 4. **Nothing expires a link.** Revocation is manual — delete the entry from `links.ts`
    and deploy. Fine for one card; if these go out to many clients, a per-link expiry
    date would be worth more than another lock.
+
+---
+
+# Wave 10 — rotating the leaked link token (2026-09-02)
+
+## Why this wave happened
+
+The private-video link token was printed into an assistant's conversation transcript, so
+it had to be treated as public. The specific mistake is worth naming, because it is the
+kind that repeats: a command stripped the comment lines out of a secrets file and printed
+what was left. Nobody set out to display a token; a filter did it as a side effect.
+
+The exposure was real but bounded. The three Stream videos are `LOCKED` with
+`requireSignedURLs`, so the leaked token granted exactly what scanning the printed QR
+grants — watch the owner's three private clips — and nothing more. No account credential,
+no signing key and no API token was in that transcript. But "anyone with the transcript
+can watch them" was reason enough to burn the link.
+
+## Closed by this wave
+
+1. **The token is rotated and the old one is dead.** A fresh 192-bit token was generated
+   into the gitignored `qr-codes/portofoliu.txt`, its hash replaced the single
+   `tokenHash` in `src/lib/video/links.ts`, and the site was deployed as
+   `b83f2503-f8b1-44f3-a58c-2f32b94855cc`. The old link now returns the ordinary 404.
+2. **No copy of the old token survives.** The old token file was overwritten with
+   `rm -P`, and the QR SVG and PNG were regenerated over the same filenames, so there is
+   no stale artefact anyone could print or scan by accident.
+3. **`scripts/stream.mjs` is under test** (closing item 1 of the previous wave).
+   `toPkcs8Pem` is now exported, and `scripts/stream.test.mts` generates a real PKCS#1
+   RSA key, converts it, and imports the result through `crypto.subtle.importKey` — the
+   exact call the Worker makes. The strongest assertion is not that the output looks like
+   PKCS#8 but that a signature made by the converted key **verifies against the original
+   public half**, which is what would catch a conversion that produced a well-formed but
+   different key. It also covers the base64-wrapped and `\n`-escaped shapes the PEM
+   travels in, idempotence on an already-PKCS#8 key, and that the output passes the
+   Worker's own `normalizePrivateKeyPem` gate — closing the loop between the CLI that
+   writes the key and the runtime that loads it. 8 tests; suite is 117 → 125.
+4. **`pnpm test` now covers `scripts/`,** not just `src/`. Importing `stream.mjs` used to
+   run the CLI and call `process.exit`, which would have taken the test runner with it,
+   so `main()` is now behind an entry-point guard. `pnpm video:stream` and
+   `pnpm video:stream list` were both run afterwards to confirm the CLI still works.
+
+## Verified
+
+- **The old token returns a clean 404** — the point of the exercise. Confirmed against
+  the live site, in contrast with a pre-deploy baseline that recorded it returning 200,
+  so the 404 is evidence of the rotation rather than of a mistyped probe.
+- The new link returns 200 in `ro`, `ru` and `en`, with
+  `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` and a `noindex` meta tag.
+- **All three clips genuinely play**, driven by headless Chrome: 1.12 MB, 3.17 MB and
+  2.78 MB of media fetched, `readyState` 4, and `currentTime` advancing 3.00s in each.
+  The decoded dimensions and durations match the three UIDs in their intended playlist
+  order — 360×640/12.3s, 638×360/64.9s, 360×640/76.3s. All three signed posters loaded.
+- The regenerated QR was decoded programmatically: it resolves to the new link, does not
+  contain the old token, and the SVG and PNG encode the same URL.
+- All three videos still read `LOCKED` in `pnpm video:stream list`.
+- Regression: `/ro` `/ru` `/en` 200; `http://` → 308 → https; `sitemap.xml` 24 URLs with
+  zero `/v/`; `robots.txt` still disallows `/v/`; an invalid, a malformed and the burned
+  token all 404 with no `tokenHash`, no Stream UID, no delivery hostname and no JWT in
+  the response.
+- No `PRIVATE_VIDEO_LINKS` Worker secret exists (`wrangler secret list`), so `links.ts`
+  is the only source of links and editing it is a complete revocation.
+
+## Observed, not changed
+
+1. **A 404 page echoes the token from the URL back into the Next.js RSC flight payload.**
+   It is the visitor's own path segment, on a `noindex` / `no-store` page, so it reveals
+   nothing the requester did not already type — but it does mean a `/v/` URL in a shared
+   browser session or a screenshot carries the token in the HTML as well as the address
+   bar. Not worth a fix; worth knowing before someone screenshots a 404 into a ticket.
+2. **No `.test.mts` file is in the `tsc` program.** `tsconfig.json` includes `**/*.ts`,
+   which does not match `.mts`, so all ten test files — the new one included — are run by
+   Node but never typechecked. Pre-existing and repo-wide; deliberately not changed in a
+   rotation commit, since widening the include would surface unrelated errors under time
+   pressure. Worth a wave of its own.
+
+## Opened by this wave
+
+1. **Printed QR codes from before 2026-09-02 are dead cards.** If any were handed out,
+   they now lead to "this link is no longer valid". Reprint from
+   `qr-codes/portofoliu.svg`. This is the unavoidable cost of rotation and the reason a
+   per-link expiry (item 4 of the previous wave) would be worth more than another lock.
+2. **Rotation is still a hand-run checklist.** It is now written down under "Rotating a
+   link token" in `.agents/video-setup.md`, but each step is manual, and the one step
+   that proves anything — confirming the *old* link 404s — is the easiest to skip. Note
+   the trap recorded there: a fresh Worker version takes a minute or two to reach every
+   edge, and probing too early shows the old link still answering 200.

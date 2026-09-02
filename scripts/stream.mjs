@@ -41,6 +41,7 @@ import { createPrivateKey } from "node:crypto";
 import { existsSync, openAsBlob, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import {
   signPlaybackToken,
   readStreamConfig,
@@ -232,8 +233,12 @@ async function cf(pathname, init = {}) {
  * That is exactly what happened on 2026-09-02.
  *
  * Returns the PKCS#8 PEM text. Nothing is printed.
+ *
+ * Exported for `scripts/stream.test.mts`, which round-trips a locally generated
+ * PKCS#1 key through here into `crypto.subtle.importKey` — the assertion that
+ * would have caught the 2026-09-02 outage before it shipped.
  */
-function toPkcs8Pem(raw) {
+export function toPkcs8Pem(raw) {
   const unescaped = String(raw).trim().replace(/\\n/g, "\n");
   const pem = unescaped.includes("-----BEGIN")
     ? unescaped
@@ -575,7 +580,16 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Only run the CLI when this file is the entry point. Importing it — which the
+// test does, to reach `toPkcs8Pem` — must not fire off a command or call
+// `process.exit`, which would take the test runner down with it.
+const isEntryPoint =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isEntryPoint) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
