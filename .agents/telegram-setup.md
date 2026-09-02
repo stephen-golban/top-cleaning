@@ -9,8 +9,9 @@
 > | --- | --- |
 > | Bot | **@TopCleaningMD_Bot** ("TopCleaning") |
 > | Delivers to | chat id **`5127988710`** — Ștefan, @ste_ghj, private chat |
-> | Live since | Worker version `ada1deb5-1843-4094-8273-1229d94a137a` |
-> | Verified | three real submissions through the live form, in `ro`, `ru` and `en` |
+> | Live since | Worker version `ada1deb5-1843-4094-8273-1229d94a137a`, now running as `b21881ab-a2fc-45bd-a645-002b8900d55b` (same code, new secret) |
+> | Verified | four real submissions through the live form — `ro`, `ru`, `en`, then `ro` again after the token rotation |
+> | Token | **rotated 2026-09-02.** The one that leaked into an old bundle is revoked and inert — see below |
 >
 > **The tappable phone number works.** This was the one thing that could not be checked
 > without a real send, and it has now been checked: Telegram returns a `phone_number`
@@ -18,8 +19,57 @@
 > the `Telefon:` line offers to call. The `<code>` tap-to-copy fallback that was written
 > down as a contingency is not needed and was not used.
 >
-> Three messages marked as a test are sitting in the chat from that verification. They
+> Four messages marked as a test are sitting in the chat from those verifications. They
 > use the company's own number, `079 022 023`. Delete them whenever you like.
+
+---
+
+## Token rotation, 2026-09-02
+
+The original bot token was accidentally baked into a Worker bundle by a deploy (Next
+inlines `.env.local` at build time — see the warning in step 2). **It has been revoked
+via @BotFather and replaced.**
+
+**The leaked value is now inert.** `/revoke` invalidates a token everywhere the instant
+it runs, so the copy sitting in the old `fdaf2174` bundle and in Cloudflare's version
+history is a dead string. There is nothing left to scrub.
+
+The new token was set by the owner, directly, with:
+
+```bash
+wrangler secret put TELEGRAM_BOT_TOKEN
+```
+
+**No redeploy was needed.** A Worker secret is a runtime binding: Cloudflare records a
+`wrangler secret put` as a new version with `Source: Secret Change` — same script,
+new secret — and rolls it to 100% on its own. `pnpm deploy` was not run and the bundle
+was not rebuilt. `wrangler tail` confirms the very next request was served by the new
+version.
+
+**Re-verified the same day, by effect rather than by inspecting the secret.** A real
+submission through <https://topcleaning.md/ro/contact> — honouring the honeypot and the
+2.5-second timing gate, not disabling them — returned the success panel, and
+`wrangler tail` showed the server action finishing `outcome: ok` with no
+`[quote] UNDELIVERED` line. That is conclusive for delivery: the action only returns
+success once `sendMessage` has answered `2xx` without `ok:false`, so a dead token
+(`401`) or a stale chat id (`400 … chat not found`) would have shown the visitor the
+"could not be sent" panel instead.
+
+**One thing was deliberately not re-checked:** the `message_id` and the `phone_number`
+entity on the new message. Reading a message back requires the forward-and-inspect trick
+below, which requires the token — and nobody but the owner should hold it. Nothing in
+`formatTelegramMessage` has changed since the entity was confirmed on `ada1deb5`, so the
+auto-link behaviour is unchanged by construction. To satisfy yourself in two seconds:
+open the chat and tap the `Telefon:` line on the newest test message.
+
+> **Your local `.dev.vars` still holds the old, revoked token.** It is harmless — the
+> string does nothing now — but it also means `pnpm preview` cannot deliver until you
+> paste the new token into it. The live site is unaffected; it reads its own copy from
+> Cloudflare.
+
+---
+
+## What this is
 
 When somebody fills in the form on topcleaning.md, the request arrives as a Telegram
 message on your phone. The message contains the service they picked, what they wrote,
@@ -198,11 +248,13 @@ wrangler secret put TELEGRAM_CHAT_ID
 
 Paste the chat id (`812345678`) and press Enter.
 
-Then publish the site so the change goes live:
+**That is all.** You do **not** need to publish the site afterwards. A Worker secret is
+read when a request comes in, not when the site is built, so the change is live on the
+very next form submission. Cloudflare records the change as a new version of the site
+(marked `Source: Secret Change`) carrying exactly the same code, and switches to it
+itself.
 
-```bash
-pnpm deploy
-```
+Only run `pnpm deploy` when the *code* has changed.
 
 ---
 
@@ -253,7 +305,7 @@ Common causes:
 
 | What the log says | What it means |
 |---|---|
-| `no delivery provider configured` | Step 5 did not happen, or the deploy in step 5 did not run. |
+| `no delivery provider configured` | Step 5 did not happen — one or both `wrangler secret put` commands were never run. Check with `wrangler secret list`. |
 | `telegram responded 401` | The token is wrong. Copy it from BotFather again. |
 | `telegram responded 400: … chat not found` | The chat id is wrong, or step 3 (`/start`) never happened. |
 | `telegram responded 403: … bot was blocked by the user` | You blocked the bot in Telegram. Unblock it. |
@@ -266,7 +318,10 @@ Common causes:
 - **Do not delete the chat with the bot in Telegram.** Deleting the chat can revoke its
   permission to message you, and quotes stop arriving.
 - **If the token ever leaks**, send `/revoke` to @BotFather, pick the bot, and it issues a
-  new token. Then redo steps 2 and 5 with the new one.
+  new token. Then redo steps 2 and 5 with the new one — but **skip `pnpm deploy`**:
+  `wrangler secret put` takes effect on the next request by itself. Revoking kills the
+  old token everywhere, so a leaked copy stops being a secret the moment you revoke it.
+  This has been done once, on 2026-09-02; see "Token rotation" at the top.
 
 ### Sending to a group instead of one person
 
@@ -296,7 +351,9 @@ ever want email instead, remove the two Telegram secrets and set `RESEND_API_KEY
   "undelivered" path.
 - Runtime secrets live in `.dev.vars` locally and in `wrangler secret put` on
   Cloudflare — **never** in `.env.local`, which Next reads at build time and OpenNext
-  bundles into the uploaded Worker. `pnpm deploy` enforces this via
+  bundles into the uploaded Worker. A `wrangler secret put` needs **no redeploy**: it
+  produces a `Source: Secret Change` version over the same script and takes effect on
+  the next request. Confirmed on 2026-09-02 against `b21881ab`. `pnpm deploy` enforces this via
   `scripts/check-build-env.mjs`. `pnpm dev` therefore cannot deliver; use `pnpm preview`,
   which runs workerd and reads `.dev.vars`.
 - Messages use Telegram's `HTML` parse mode, escaping `&`, `<`, `>`. MarkdownV2 was
@@ -309,7 +366,11 @@ ever want email instead, remove the two Telegram secrets and set `RESEND_API_KEY
   a `phone_number` entity over `+37379022023`. To re-check after any change to
   `formatTelegramMessage`, forward the message within the chat and read
   `Message.entities` off the `forwardMessage` response — the bot API cannot read back
-  its own outbound messages any other way, and `getUpdates` never shows them.
+  its own outbound messages any other way, and `getUpdates` never shows them. That
+  technique needs the bot token in hand, so it is the owner's to run, not an agent's;
+  an agent verifying delivery should rely on the success panel plus the absence of a
+  `[quote] UNDELIVERED` line in `wrangler tail`, which together prove a `2xx` from
+  `sendMessage`.
 - Messages are clamped to Telegram's 4096-code-unit limit without splitting an HTML
   entity — escaping can grow one character into five, so a 2000-character details field
   can exceed the limit.

@@ -506,11 +506,77 @@ would ship a change with nothing to exercise it. The owner deploys after step 5 
    in plaintext inside the script. Remediated by moving the runtime secrets to
    `.dev.vars`, deleting `.env.local`, and redeploying as `ada1deb5`; `pnpm deploy` now
    runs `scripts/check-build-env.mjs`, which aborts the deploy if the bundle carries any
-   non-`NEXT_PUBLIC_*` variable. Still open, low priority: the bot token was never
-   rotated, on the reasoning that the only party who could read the bundle is the
-   Cloudflare account owner, who already holds the secret. Rotate it via `/revoke` to
-   @BotFather the day anyone else gets account or Workers-read access.
+   non-`NEXT_PUBLIC_*` variable. **Fully closed 2026-09-02: the token was rotated.**
+   The owner sent `/revoke` to @BotFather and set the replacement himself with
+   `wrangler secret put TELEGRAM_BOT_TOKEN`, so **the token sitting in the `fdaf2174`
+   bundle is now inert** — revoking it invalidates it everywhere, and nothing has to be
+   scrubbed from Cloudflare's version history. Verified by effect on the live site, not
+   by reading the secret: a real submission through `https://topcleaning.md/ro/contact`
+   returned the success panel, which the server action only reaches when Telegram's
+   `sendMessage` answers 2xx without `ok:false`. See "Token rotation, 2026-09-02" in
+   `.agents/telegram-setup.md`.
 6. **`.env.example` still describes the old layout.** It predates the `.dev.vars` split
    and should be reworked to say plainly that a `.env` file is build-time and public and
    only `NEXT_PUBLIC_*` may live there. Cosmetic; the guard script enforces the rule
    regardless of what the example says.
+
+---
+
+# Wave 8 — token rotation and re-verification (2026-09-02)
+
+The bot token leaked into the `fdaf2174` Worker bundle (wave 7, item 5) has been
+**revoked via @BotFather and replaced.** The owner set the new value himself with
+`wrangler secret put TELEGRAM_BOT_TOKEN`; no agent has read, held or logged it.
+
+## Verified
+
+- **Delivery still works.** A real submission through the live form at
+  `https://topcleaning.md/ro/contact` — service *Curățenie generală*, details
+  `TEST — rotire token, ignorați…`, phone `079022023` — rendered the success panel
+  ("Cererea a fost trimisă."), not the "could not be sent" fallback. The anti-spam
+  defences were honoured, not disabled: the honeypot was left empty and the browser's
+  own timestamp was posted after a genuine 4.57-second wait, so the 2.5-second gate ran
+  and passed.
+- **The success panel is proof of a Telegram `2xx`.** `submitQuote` returns
+  `{ status: "success" }` on that path only after `delivery.send()` resolves, and
+  `createTelegramDelivery` throws on a non-2xx *and* on a 200 carrying `ok:false`. A
+  dead token would be `401`, a wrong chat id `400 … chat not found`; either would have
+  shown the failure panel.
+- **No `[quote] UNDELIVERED` in the log.** `wrangler tail` was running across the
+  submission: the `POST /ro/contact` server-action request came back `outcome: ok`,
+  `exceptions: []`, `logs: []`, HTTP 200, `wallTime 3410ms` — the wall time being the
+  outbound call to `api.telegram.org`.
+- **No redeploy was needed, and none was done.** `wrangler secret put` is a runtime
+  change: Cloudflare recorded it as a version with `Source: Secret Change`
+  (`b21881ab-a2fc-45bd-a645-002b8900d55b`, 08:09:03Z) carrying the *same script* as
+  `ada1deb5`, and rolled it to 100% by itself. `wrangler tail` confirms the request was
+  served by `b21881ab`. No `pnpm deploy` was run and no bundle was rebuilt.
+- **Regression sweep clean.** `/ro`, `/ru`, `/en` → 200. Cleartext `http://` → 308 →
+  HTTPS with no HSTS on the cleartext hop. An invalid `/v/` token → 404 carrying
+  `x-robots-tag: noindex, nofollow, noarchive, nosnippet`, `referrer-policy:
+  no-referrer` and the no-store `Cache-Control`. `sitemap.xml`: 24 URLs, zero `/v/`.
+
+## Not verified, and why
+
+- **The `message_id`, and the `phone_number` entity, were not re-observed.** The bot
+  API cannot read back its own outbound messages; the only technique that works is to
+  forward the message within the chat and read `Message.entities` off the
+  `forwardMessage` response — and that needs the bot token in hand. The token is
+  deliberately unreadable: Cloudflare never hands a secret's value back, and the copy in
+  the local `.dev.vars` is the old, revoked one. Confirming it would have meant handling
+  the credential, which was out of scope, so it was skipped rather than faked.
+- **This is a small gap, not an open risk.** `formatTelegramMessage` has not changed
+  since commit `40b848f`, which predates the `ada1deb5` run where the `phone_number`
+  entity was observed on all three test messages. The message text is byte-identical in
+  shape and the number is still sent as bare E.164, so Telegram's server-side
+  auto-detection has nothing new to work with. If someone wants certainty, the owner can
+  simply open the chat and tap the `Telefon:` line on the new test message.
+- **The chat id was not read back either.** It is a secret too. What the success panel
+  proves is that whatever chat id is configured accepted the message — a stale one would
+  have produced `400 … chat not found` and the failure panel.
+
+## Left behind
+
+One more test message is now in the owner's Telegram, in Romanian, saying it is a token
+rotation test and using the company's own public number `079 022 023`. Delete it, along
+with the three from `ada1deb5`, whenever convenient.

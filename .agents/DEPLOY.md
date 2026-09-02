@@ -558,11 +558,21 @@ clean bundle inlines exactly one variable, `NEXT_PUBLIC_SITE_URL`. `pnpm deploy`
 runs `scripts/check-build-env.mjs` between build and upload so this cannot recur
 silently — see "Nothing but `NEXT_PUBLIC_*` may go in a `.env` file" in Step 3.
 
-**Should the token be rotated?** The exposure was to whoever can read the Worker script,
-which is the Cloudflare account owner — the same person who holds the secret. So the
-practical risk is low and nothing was rotated. If the account is ever shared, or an API
-token with Workers-read scope is ever issued to anyone else, revoke the bot token with
-`/revoke` to @BotFather and redo `wrangler secret put TELEGRAM_BOT_TOKEN`.
+**The token was rotated, on 2026-09-02.** The original judgement — that the only party
+who could read the bundle is the account owner, who already holds the secret — was
+sound but not worth relying on. The owner sent `/revoke` to @BotFather and set the
+replacement with `wrangler secret put TELEGRAM_BOT_TOKEN`, so **the value inside the
+`fdaf2174` bundle is now inert**: revoking invalidates a token everywhere at once, and
+nothing needs scrubbing out of Cloudflare's version history.
+
+No redeploy was required and none was done. `wrangler secret put` is a runtime change:
+Cloudflare recorded it as version `b21881ab-a2fc-45bd-a645-002b8900d55b` with
+`Source: Secret Change` — the same script as `ada1deb5` — and rolled it to 100% itself.
+Re-verified by a real submission through `/ro/contact`: success panel, and `wrangler
+tail` showing the server action `outcome: ok` with no `[quote] UNDELIVERED`. The
+`message_id` and `phone_number` entity were not re-read, because doing so needs the
+token; `formatTelegramMessage` is unchanged since `40b848f`, so the auto-link is
+unchanged by construction. Full write-up in `.agents/telegram-setup.md`.
 
 **What was verified against the live site**, on `ada1deb5`:
 
