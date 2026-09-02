@@ -13,23 +13,57 @@ video later is only steps 5–9, and takes about five minutes.
 
 ## Where this stands right now (2026-09-02)
 
-**Nothing is live yet, and the reason is step 1.**
+**Done and live.** One QR link is registered and it plays three videos as a playlist.
 
 | Step | State |
 | ---- | ----- |
-| 1. API token | ✗ **Redo it.** A token exists in `.dev.vars` and Cloudflare accepts it, but its permissions were granted on **zones** instead of on the **account**. Cloudflare's Stream API lives at `/accounts/<id>/stream`, so the token cannot reach it: every Stream call comes back `403 Authorization Failure`. Run `pnpm video:stream doctor` to see this for yourself, then redo step 1. |
-| 2. Token in `.dev.vars` | ✓ done — the file and the variable name are correct |
-| 3–9 | ⏸ blocked on step 1. No signing key exists, no video is uploaded, no link is registered, no QR code has been made. `wrangler secret list` shows no `CF_STREAM_*` secret. |
+| 1–2. API token | ✓ done — recreated with **account**-scoped rows; `pnpm video:stream doctor` reports all three checks green |
+| 3. Signing key | ✓ done — created, converted to PKCS#8 (see the note in step 3), stored in `.dev.vars` and `stream-signing-key.pem` |
+| 4. Videos | ✓ done — three uploaded, all three read `LOCKED` |
+| 5. Subdomain | ✓ done — `customer-arfa8zcru9z0mc03.cloudflarestream.com` |
+| 6. Worker secrets | ✓ done — `CF_STREAM_SIGNING_KEY_ID`, `CF_STREAM_SIGNING_KEY_PEM`, `CF_STREAM_CUSTOMER_SUBDOMAIN` |
+| 7. Link token | ✓ done — the token lives in `qr-codes/portofoliu.txt` (gitignored) and nowhere else |
+| 8. Registered | ✓ done — one entry in `src/lib/video/links.ts`, deployed |
+| 9. QR code | ✓ done — `qr-codes/portofoliu.svg` (print) and `qr-codes/portofoliu.png` |
 
-`/v/<anything>` on the live site therefore shows "this link is no longer valid", which is
-the correct behaviour for a site with no videos registered. The rest of the site is
-unaffected.
+The three videos, in the order the playlist plays them:
 
-The code around all of this **is** finished and deployed, including the change that made
-`links.ts` safe to have in a public repository (see step 8). When the token is fixed,
-steps 3–9 are about fifteen minutes of typing.
+| # | UID | Length | Size | Source file |
+| - | --- | ------ | ---- | ----------- |
+| 1 | `a32f53fe9e2611f48b8ea782590b40bd` | 12s | 1080×1920 (portrait) | `IMG_2549.MOV` |
+| 2 | `168b30496161d6cf54844e3654bb461b` | 65s | 848×478 (landscape) | `IMG_2615.MOV` |
+| 3 | `7e6c9668515fc22d658d84f7718f001b` | 76s | 1080×1920 (portrait) | `IMG_2559.MOV` |
 
----
+Video 2 is low resolution. That was known and accepted when it was uploaded; Cloudflare
+cannot add detail that was never filmed. If a sharper copy of that clip ever turns up,
+upload it and swap the UID in `links.ts`.
+
+**Verified against the live site**, not merely assumed:
+
+- `https://topcleaning.md/v/<token>` → 307 → `/ro/v/<token>` → 200, in all three
+  languages, carrying `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet`.
+- All three clips genuinely **play** in a real browser: the player fetches its manifest
+  (200) and pulls down `video/mp4` segments — 1.06 MB, 3.57 MB and 2.90 MB for clips 1,
+  2 and 3. Each clip's signed JWT was decoded and its `sub` matches the right UID in the
+  right playlist position, with a 2-hour expiry.
+- **Unsigned access is refused for every one of the three UIDs**, on both delivery hosts
+  (`videodelivery.net` and the customer subdomain) and on every path that carries data —
+  `manifest/video.m3u8`, `manifest/video.mpd`, `thumbnails/thumbnail.jpg`,
+  `downloads/default.mp4`: all `401 unauthorized`. Loading the bare player
+  (`iframe.videodelivery.net/<UID>`) in a browser returns the player *shell* with HTTP
+  200 — that is Cloudflare's page, not the video — and every request it then makes for
+  actual content is refused. **Zero bytes of video are served.** A 200 on that URL is
+  therefore not a leak, and neither is the `200` on an `OPTIONS` CORS preflight.
+- An invalid, revoked or mistyped token gives the same clean 404 with no video UID and
+  no delivery hostname anywhere in the response.
+- The QR image was decoded programmatically and resolves to exactly the live link; the
+  SVG and the PNG encode the same URL. Fetching the decoded URL returns 200.
+- `/v/` is absent from `sitemap.xml` (24 URLs, none of them `/v/`) and disallowed in
+  `robots.txt`.
+
+The token itself is **not** written down here, and must not be. It is in
+`qr-codes/portofoliu.txt` and belongs in a password manager. Anyone holding it can watch
+the videos.
 
 ## Before anything: where each value goes
 
@@ -207,6 +241,29 @@ key **ID** but never the key itself: secrets belong in files, not on screens.
 > disaster — make a new one with the same command and redo step 7. Every existing video
 > keeps working; they just get signed by the new key.
 
+> ### The key is converted on the way in, and that matters
+>
+> Cloudflare hands back the key in a format called **PKCS#1**. The website runs on the
+> Cloudflare Workers runtime, whose only way to load a key —
+> `crypto.subtle.importKey` — accepts **PKCS#8** and nothing else. So `pnpm
+> video:stream keys` converts it before saving. You do not have to do anything; this
+> note exists so the next person knows why the file does not look like what the
+> Cloudflare dashboard shows.
+>
+> This was not always so, and the failure it caused on 2026-09-02 is worth knowing
+> because it is invisible from the outside. A PKCS#1 key uploads happily, `wrangler
+> secret list` shows it, and every `/v/` link then returns the ordinary "this link is no
+> longer valid" 404 — the page cannot say *why* without telling a stranger which links
+> are real. The real reason appears only in `wrangler tail`:
+>
+> ```
+> [video] cannot sign playback: CF_STREAM_SIGNING_KEY_PEM is malformed:
+>         key is PKCS#1; Web Crypto needs PKCS#8
+> ```
+>
+> **If you ever see a working link start 404ing, run `wrangler tail` and open the link.**
+> One line there tells you what a dozen guesses will not.
+
 ---
 
 ## Step 4 — Upload the video and lock it
@@ -216,6 +273,11 @@ key **ID** but never the key itself: secrets belong in files, not on screens.
 ```bash
 pnpm video:stream upload ~/Downloads/IMG_2549.MOV "Curatenie dupa reparatie"
 ```
+
+Upload the files **in the order you want them played**, and write down each UID next to
+its file as it appears. Cloudflare does not preserve any ordering of its own — the order
+is whatever you type into `clips:` in step 8 — and once three 32-character IDs are in
+your notes, the only way to tell which is which is to have written it down.
 
 It uploads the file with _"require signed URLs"_ already switched on, so the video is
 never — not even for a second — playable by anyone who guesses its ID. Then it waits for
@@ -412,6 +474,12 @@ the second proves everyone else is shut out.
 Steps 4, 7, 8 and 9 — upload and lock, make a token, register it and deploy, make the QR.
 Steps 1, 2, 3, 5 and 6 were one-time setup and are already done.
 
+**To add a video to the playlist that already exists** — rather than creating a second,
+separate link — it is even shorter. Do step 4 to upload and lock it, then add its `uid`
+to the existing entry's `clips` list in `src/lib/video/links.ts` and `pnpm deploy`. Do
+not make a new token and do not make a new QR code: the printed card keeps working and
+gains the new video. That is the whole point of a playlist behind one link.
+
 ## Taking a link away
 
 Delete its block from `src/lib/video/links.ts` and run `pnpm deploy`. The link stops
@@ -429,6 +497,8 @@ dashboard.
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "This link is no longer valid" on a link you just created         | The site has not been deployed yet, or the token in `links.ts` does not exactly match the one in the QR. Run `pnpm deploy`.                                   |
 | The same message, and you are sure the token is right             | The signing key is missing or wrong on the live site. Run `wrangler tail`, open the link again, and read the line starting `[video]`. Redo step 6.            |
+| `wrangler tail` says `key is PKCS#1; Web Crypto needs PKCS#8`     | The signing key was stored in Cloudflare's own format, which the Workers runtime cannot load. `pnpm video:stream keys` converts it now, so redo step 3 and step 6 — or, if the key cannot be replaced, convert the file in place with `openssl pkcs8 -topk8 -nocrypt -in stream-signing-key.pem -out stream-signing-key.pem` and re-run step 6. Nothing else needs redeploying. |
+| `iframe.videodelivery.net/<UID>` opens with a 200 and you expected it to fail | It is not a leak. That 200 is Cloudflare's player *shell* — an empty page of JavaScript. Every request it makes for the actual video comes back `401`. To test the lock properly, ask for the content directly: `curl -o /dev/null -w '%{http_code}\n' https://videodelivery.net/<UID>/manifest/video.m3u8` must print `401`. |
 | The page loads but the poster image is missing                    | The video is still processing, or `posterTime` is past the end of the video.                                                                                 |
 | The page loads, the poster shows, playing fails                   | The video is probably not marked as requiring signed URLs, or was deleted. Run `pnpm video:stream list`.                                                      |
 | `CF_STREAM_API_TOKEN is not set`                                  | Step 2. The line is missing from `.dev.vars`, or you are in the wrong folder.                                                                                 |

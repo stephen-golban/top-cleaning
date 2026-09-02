@@ -45,6 +45,24 @@ import type { VideoLink } from "./types";
  *  See `.agents/video-setup.md`.
  */
 export const videoLinks: VideoLink[] = [
+  {
+    tokenHash: "nTToeXxPTSDSgt1AcIbj9sleJPSeNgBzvsDLw9GJ4N8",
+    title: {
+      ro: "Din activitatea noastră",
+      ru: "Из нашей работы",
+      en: "From our work",
+    },
+    description: {
+      ro: "Trei filmări scurte din lucrările noastre.",
+      ru: "Три коротких видео с наших работ.",
+      en: "Three short clips from our work.",
+    },
+    clips: [
+      { uid: "a32f53fe9e2611f48b8ea782590b40bd" },
+      { uid: "168b30496161d6cf54844e3654bb461b" },
+      { uid: "7e6c9668515fc22d658d84f7718f001b" },
+    ],
+  },
   // Example — delete this and add your own. It is commented out so that an
   // unfinished entry can never accidentally become a live link.
   //

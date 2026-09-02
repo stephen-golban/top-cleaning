@@ -37,6 +37,7 @@
  *
  * See `.agents/video-setup.md` for the full walkthrough.
  */
+import { createPrivateKey } from "node:crypto";
 import { existsSync, openAsBlob, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -222,12 +223,44 @@ async function cf(pathname, init = {}) {
 /* Commands                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Cloudflare hands back a PKCS#1 key (`BEGIN RSA PRIVATE KEY`), base64-wrapped.
+ * `crypto.subtle.importKey` — which is all the Worker runtime has — only takes
+ * PKCS#8. So convert once, here, rather than shipping a key the site cannot
+ * load: the failure otherwise surfaces on the live site as an indistinguishable
+ * 404 on every `/v/` link, with the real reason only in `wrangler tail`.
+ * That is exactly what happened on 2026-09-02.
+ *
+ * Returns the PKCS#8 PEM text. Nothing is printed.
+ */
+function toPkcs8Pem(raw) {
+  const unescaped = String(raw).trim().replace(/\\n/g, "\n");
+  const pem = unescaped.includes("-----BEGIN")
+    ? unescaped
+    : Buffer.from(unescaped, "base64").toString("utf8").trim();
+
+  if (!pem.includes("-----BEGIN")) {
+    fail("Cloudflare returned a signing key in a shape this script cannot read.");
+  }
+
+  // `createPrivateKey` parses PKCS#1 and PKCS#8 alike; the export picks the one
+  // Web Crypto needs. A key that is already PKCS#8 passes through unchanged.
+  return createPrivateKey(pem).export({ type: "pkcs8", format: "pem" }).trim();
+}
+
 async function createKey() {
   const result = await cf("/stream/keys", { method: "POST" });
 
+  const pkcs8 = toPkcs8Pem(result.pem);
+
   writeDevVar("CF_STREAM_SIGNING_KEY_ID", result.id);
-  writeDevVar("CF_STREAM_SIGNING_KEY_PEM", result.pem);
-  writeFileSync(PEM_FILE, `${result.pem}\n`, { mode: 0o600 });
+  // `.dev.vars` cannot hold a newline, so the PEM goes in base64-wrapped —
+  // the same shape Cloudflare uses, and one `normalizePrivateKeyPem` accepts.
+  writeDevVar(
+    "CF_STREAM_SIGNING_KEY_PEM",
+    Buffer.from(pkcs8, "utf8").toString("base64"),
+  );
+  writeFileSync(PEM_FILE, `${pkcs8}\n`, { mode: 0o600 });
 
   console.log(`\n✓ Signing key created.  Key ID: ${result.id}`);
   console.log(`  Saved to ${DEV_VARS_FILE} (the private key is NOT printed here).`);

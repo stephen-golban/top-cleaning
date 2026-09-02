@@ -148,13 +148,18 @@ test("resolveVideoLink is case-sensitive", async () => {
 });
 
 test("loadVideoCatalog picks up PRIVATE_VIDEO_LINKS", async () => {
+  // Stated as "one entry more than the file ships" rather than "exactly one",
+  // so that registering a real link in `links.ts` does not fail this test.
   resetVideoCatalogCache();
   const token = generateToken();
   const catalog = await loadVideoCatalog({
     PRIVATE_VIDEO_LINKS: JSON.stringify([{ token, clips: [{ uid: UID }] }]),
   });
-  assert.equal(catalog.length, 1);
-  assert.equal(catalog[0]!.token, token);
+  assert.equal(catalog.length, shippedLinks.length + 1);
+  assert.ok(
+    catalog.some((entry) => entry.token === token),
+    "the environment entry is in the catalog",
+  );
   resetVideoCatalogCache();
 });
 
@@ -174,8 +179,12 @@ test("loadVideoCatalog resolves a hashed entry from the environment", async () =
 
 test("loadVideoCatalog survives invalid JSON in the environment", async () => {
   resetVideoCatalogCache();
+  const baseline = await loadVideoCatalog({});
+  resetVideoCatalogCache();
   const catalog = await loadVideoCatalog({ PRIVATE_VIDEO_LINKS: "{not json" });
-  assert.deepEqual(catalog, []);
+  // Unparseable JSON is ignored, leaving exactly what `links.ts` ships — not a
+  // crash, and not an empty catalog that would take the real links down too.
+  assert.deepEqual(catalog, baseline);
   resetVideoCatalogCache();
 });
 

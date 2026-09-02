@@ -29,7 +29,8 @@ Everything below is typed into that same window.
 | HSTS | `max-age=31536000; includeSubDomains`, no `preload` |
 | Preview URL | none — `workers.dev` was turned off on 2026-09-01 (see "The workers.dev URL") |
 | Certificate | Google Trust Services `WE1`, issued by Cloudflare, auto-renewing |
-| Current version | `62ad1330-11c8-4e42-ba30-97185cd46d14`, deployed 2026-09-02 |
+| Current version | `63b1ad0b-b15a-494b-9759-28ebcc634b1d`, deployed 2026-09-02 |
+| Private videos | live — one QR link plays three clips; see `.agents/video-setup.md` |
 | Quote requests | delivered to Telegram, verified live — see `.agents/telegram-setup.md` |
 
 ---
@@ -221,13 +222,24 @@ redeploy needed.
 Skip this whole section if no QR-code videos exist yet. The site works fine without it;
 `/v/<anything>` simply shows "this link is no longer valid".
 
-> **As of 2026-09-02 this section has not been done.** No `CF_STREAM_*` secret is set,
-> no video is uploaded, and no link is registered — so `/v/` is inert, which is the
-> correct state for a site with no videos. It is blocked one step earlier than this
-> file: the Cloudflare API token in `.dev.vars` was created with **zone**-scoped
-> permissions, and Cloudflare Stream is an **account**-scoped API, so every Stream call
-> returns `403 Authorization Failure`. `pnpm video:stream doctor` diagnoses it in one
-> command. Fix the token first — `.agents/video-setup.md` step 1 — then come back here.
+> **Done as of 2026-09-02.** All three `CF_STREAM_*` secrets are set, three videos are
+> uploaded and locked, and one QR link plays them as a playlist. `/v/<token>` returns
+> 200 and the video genuinely plays; every other token 404s. The full record — UIDs,
+> what was verified and how — is in `.agents/video-setup.md`.
+>
+> Two things went wrong on the way, and both are the kind that look like something else:
+>
+> 1. The API token was created with **zone**-scoped permission rows. Cloudflare Stream
+>    is an **account**-scoped API, so every call returned `403 Authorization Failure`,
+>    which reads like a missing permission rather than a misplaced one. `pnpm
+>    video:stream doctor` now tells the two apart in one command.
+> 2. The signing key Cloudflare returns is **PKCS#1**; the Workers runtime can only load
+>    **PKCS#8**. The site failed closed — every `/v/` link returned its ordinary 404,
+>    correctly refusing to explain itself — and the only evidence was one line in
+>    `wrangler tail`. `pnpm video:stream keys` now converts the key before saving it.
+>
+> The lesson for anything in this file: when a `/v/` link 404s, **run `wrangler tail`
+> and open the link**. The page is designed not to tell you why.
 
 ```bash
 npx wrangler secret put CF_STREAM_SIGNING_KEY_ID
@@ -416,15 +428,28 @@ Every line must start with `200`.
 - [ ] Paste `https://topcleaning.md/ro` into a WhatsApp message to yourself. The preview
       card should show the Top Cleaning logo image and the Romanian description.
 
-**The private videos** (skip if you did not do step 4b)
+**The private videos** — all of these passed on 2026-09-02
 
 - [ ] `https://topcleaning.md/v/made-up-nonsense` shows "this link is no longer valid",
       not an error page and not a video.
-- [ ] A real QR link plays its video.
+- [ ] A real QR link plays its video. **Press play and watch it move.** A page that
+      renders, and even a poster image that appears, proves only that the page loaded;
+      the poster is a still and it is signed separately from the video.
 - [ ] Every uploaded video reads `LOCKED` in `pnpm video:stream list` — check each one,
       not just the last. A `PUBLIC` line is a video anyone with the ID can watch.
 - [ ] The unsigned delivery URL of each video — `https://<subdomain>/<UID>/manifest/video.m3u8`
-      — is **refused**. That is the lock that actually stops strangers.
+      — is **refused**. That is the lock that actually stops strangers:
+
+      ```bash
+      curl -o /dev/null -w '%{http_code}\n' \
+        https://videodelivery.net/<UID>/manifest/video.m3u8
+      ```
+
+      It must print `401`. Do it for every UID, on both `videodelivery.net` and the
+      customer subdomain. Do **not** use `https://iframe.videodelivery.net/<UID>` for
+      this test: that returns `200` even for a properly locked video, because it serves
+      the player shell rather than the video, and it will convince you of a leak that is
+      not there.
 - [ ] Search Google for `site:topcleaning.md/v` — nothing should ever appear here.
 
 ---
@@ -843,8 +868,9 @@ Use `--resolve`; this machine's resolver has a stale negative cache for the doma
    those are the ones that live in version control.
 4. ~~**Only `QUOTE_NOTIFY_EMAIL` is set** — the quote form cannot deliver.~~ **Closed
    2026-09-02** — `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set and delivery is
-   verified end to end against the live site. What is still open from this item is the
-   video half: no `CF_STREAM_*` secret is set, so `/v/` cannot play video.
+   verified end to end against the live site. The video half closed the same day: all
+   three `CF_STREAM_*` secrets are set and `/v/` plays video. Six secrets are now set,
+   and `CF_STREAM_API_TOKEN` is deliberately **not** among them.
 5. **DNS records could not be enumerated** during the deploy — the OAuth token has
    `zone (read)` but not `#dns_records:read`, so `GET /zones/{id}/dns_records` returns
    `10000 Authentication error`. The zone was confirmed active and both hostnames were

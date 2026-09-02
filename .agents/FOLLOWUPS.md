@@ -133,9 +133,10 @@ Full evidence in `.agents/QA-REPORT.md`. Deployment runbook in `.agents/DEPLOY.m
    `QUOTE_NOTIFY_EMAIL` are unset, so every submission shows the honest "could not
    be sent, call us" panel and lands in the server log as `[quote] UNDELIVERED`.
    DEPLOY.md step 4a. This is the top item on the post-deploy smoke checklist.
-5. **Never tested:** real video playback (needs Stream credentials — only the
-   unhappy path is verified), real email delivery, the live domain/DNS/TLS,
-   non-Chromium browsers, and a real screen reader.
+5. ~~**Never tested:** real video playback (needs Stream credentials — only the
+   unhappy path is verified)~~ **Closed 2026-09-02** — three videos are live behind one
+   QR link, and playback is verified in a real browser per UID. Still never tested: real
+   email delivery, non-Chromium browsers, and a real screen reader.
 
 ---
 
@@ -263,13 +264,14 @@ and 4 above are now historical. Full runbook and rollback procedure: `.agents/DE
 2. ~~**`https://top-cleaning.ibeep.workers.dev` still serves the whole site.**~~
    **Closed by wave 6** — see below.
 3. **Production secrets are still incomplete.** `QUOTE_NOTIFY_EMAIL` is now set;
-   `RESEND_API_KEY` is not, so the quote form still cannot deliver, and no Stream
-   credentials exist, so signed video playback cannot work. DEPLOY.md steps 4a and 4b.
+   `RESEND_API_KEY` is not — though quote delivery moved to Telegram, which works. The
+   Stream half is **closed 2026-09-02**: all three `CF_STREAM_*` secrets are set and
+   signed playback works. DEPLOY.md step 4a is what remains.
 4. **The DNS record list was never seen.** The token has `zone (read)` but not
    `#dns_records:read`, so `GET /zones/{id}/dns_records` fails. Both hostnames verifiably
    serve the Worker, but nobody has checked the zone for leftovers from the old site.
-5. **Still never tested**: real video playback, real email delivery, non-Chromium
-   browsers, a real screen reader, and the quote form's happy path end to end.
+5. **Still never tested**: real email delivery, non-Chromium browsers, and a real screen
+   reader. ~~real video playback~~ closed 2026-09-02.
 
 ---
 
@@ -659,24 +661,35 @@ Then `pnpm video:stream doctor`, which was added for exactly this and prints one
 - **`wrangler secret list`** is `QUOTE_NOTIFY_EMAIL`, `TELEGRAM_BOT_TOKEN`,
   `TELEGRAM_CHAT_ID` — no `CF_STREAM_*`, as expected while step 1 is unfixed, and no
   `CF_STREAM_API_TOKEN` or `CF_ACCOUNT_ID`, which must never be there.
+  **Updated 2026-09-02:** the three `CF_STREAM_*` secrets are now set as well, making six.
+  `CF_STREAM_API_TOKEN` and `CF_ACCOUNT_ID` are still absent, and still must be.
 
 ## Not verified, and why
 
-- **Real playback.** No signing key exists and no video is uploaded, so there was nothing
-  to play. Unchanged from waves 3 and 5: this is still the one part of the site never
-  exercised for real.
-- **That an unsigned Cloudflare delivery URL is refused.** This is the security claim the
-  owner is relying on and it is still *asserted, not tested* — there is no video to test
-  it against. Test it the moment the first upload lands: fetch
-  `https://<customer subdomain>/<UID>/manifest/video.m3u8` with no token, for each UID,
-  and require a refusal. It is on the DEPLOY.md checklist now.
-- **`pnpm video:stream upload` has never run against Cloudflare.** It is written and
-  type-checked but the 403 blocks the only thing that would exercise it. Treat the first
-  run as a test: it prints the UID and asserts the lock, so a failure is loud.
-- **The three source clips were not touched**: `IMG_2549.MOV` (12s, 1080×1920, 23 MB),
-  `IMG_2615.MOV` (65s, 848×478, 11 MB), `IMG_2559.MOV` (76s, 1080×1920, 129 MB). All three
-  are under the 200 MB single-request upload limit. The intended playlist order is
-  2549 → 2615 → 2559, all behind one token.
+**Everything in this section was closed on 2026-09-02.** Kept, struck through, because
+what was untested and why is the useful part of the record.
+
+- ~~**Real playback.**~~ Three videos are uploaded and one QR link plays them as a
+  playlist. Verified in headless Chrome against the live site: the player fetches its
+  manifest (200) and pulls real `video/mp4` segments — 1.06 MB, 3.57 MB and 2.90 MB for
+  clips 1, 2 and 3. Each clip's signed JWT was decoded and its `sub` matches the intended
+  UID in the intended playlist position.
+- ~~**That an unsigned Cloudflare delivery URL is refused.**~~ Tested, for all three
+  UIDs, on both `videodelivery.net` and the customer subdomain, across
+  `manifest/video.m3u8`, `manifest/video.mpd`, `thumbnails/thumbnail.jpg` and
+  `downloads/default.mp4`: every one is `401 unauthorized`, and a browser pointed at the
+  bare player is served zero bytes of video.
+
+  One trap for whoever repeats this: `https://iframe.videodelivery.net/<UID>` answers
+  **200** even for a correctly locked video. That is Cloudflare's player shell, not the
+  video; every request it then makes is refused. Test the manifest, not the player, or
+  you will report a leak that does not exist.
+- ~~**`pnpm video:stream upload` has never run against Cloudflare.**~~ It has now, three
+  times, and it worked as designed: it sets `requireSignedURLs` in the upload request,
+  reads the flag back, and refuses to report success without it.
+- ~~**The three source clips were not touched.**~~ All three uploaded in the intended
+  order 2549 → 2615 → 2559, all locked, all behind one token. UIDs are in
+  `.agents/video-setup.md`.
 
 ## Decisions this wave took, that a later wave should not silently undo
 
@@ -693,3 +706,24 @@ Then `pnpm video:stream doctor`, which was added for exactly this and prints one
    Crypto and there is no synchronous SHA-256 in the Workers runtime. The catalog and its
    keys are computed once per environment value and memoised, so this is not per-request
    work.
+
+## Opened by the video wave (2026-09-02)
+
+1. **`scripts/stream.mjs` has no tests, and it now does something load-bearing.** `keys`
+   converts Cloudflare's PKCS#1 signing key into the PKCS#8 the Workers runtime requires.
+   Get that wrong and the site fails closed: every `/v/` link 404s, and the reason is
+   visible only in `wrangler tail`. `pnpm test` globs `src/**/*.test.mts`, so nothing
+   covers `scripts/`. Worth a test that round-trips a generated PKCS#1 key through
+   `toPkcs8Pem` into `crypto.subtle.importKey` — precisely the assertion that would have
+   caught this before it reached production rather than after.
+2. **Clip 2 (`IMG_2615.MOV`) is 848×478.** Knowingly accepted; it is the only copy that
+   exists. It sits between two 1080×1920 portrait clips, so it is noticeably softer, and
+   Cloudflare cannot add detail that was never filmed. If a better master appears, upload
+   it and swap the UID in `links.ts` — the printed QR code keeps working untouched.
+3. **The clips have no individual titles**, so the playlist reads "Videoclipul 1/2/3".
+   Honest rather than good: nobody who wrote the entry had watched the videos, and
+   inventing descriptions of someone's work is worse than numbering it. Whoever knows
+   what each clip shows should add a per-clip `title` in `links.ts`.
+4. **Nothing expires a link.** Revocation is manual — delete the entry from `links.ts`
+   and deploy. Fine for one card; if these go out to many clients, a per-link expiry
+   date would be worth more than another lock.
