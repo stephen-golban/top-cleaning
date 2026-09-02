@@ -1,0 +1,83 @@
+# Response headers for the files Cloudflare's ASSETS binding serves.
+#
+# https://developers.cloudflare.com/workers/static-assets/headers/
+# https://opennext.js.org/cloudflare/caching#static-assets-caching
+#
+# ## Why this file exists
+#
+# On Cloudflare the ASSETS binding answers `/_next/static/*`, `/fonts/*`,
+# `/images/*` and the brand files at the root *before* the Worker runs, so the
+# `headers()` block in `next.config.ts` never sees those requests — it only
+# applies under `next start`. Without this file every static asset on the live
+# site was served `Cache-Control: public, max-age=0, must-revalidate`, which is
+# the ASSETS default: a conditional request on every asset, on every page view,
+# forever. That includes the content-hashed JavaScript and the four subsetted
+# webfonts, none of which can ever change behind their URL.
+#
+# On Cloudflare, `_headers` is consumed as configuration and never uploaded as an
+# asset — it is on Wrangler's ignore list next to `_redirects` and
+# `_routes.json` — so `/_headers` is not fetchable in production. (Under
+# `next start` it would be served like any other file in `public/`, which is why
+# this file contains nothing but a caching policy.)
+#
+# ## The rule these values follow
+#
+# **Immutable only where the URL contains the content hash.** A hashed filename
+# cannot serve different bytes tomorrow, so a year plus `immutable` is not a bet
+# — the browser is told never to revalidate, and a change ships as a new URL.
+#
+# **Everything else gets a day.** The brand marks and the photographs are *not*
+# content-hashed: `hero-1080.avif` keeps its name when the file behind it
+# changes, which it will — the photographs are placeholders until the client's
+# own are re-encoded (`.agents/FOLLOWUPS.md`, wave 3). A year of `immutable`
+# there would mean a visitor who has seen the old photograph keeps seeing it
+# until 2027, with no way to push a correction. One day is a ~86,400× reduction
+# in revalidation traffic and still bounds the worst case at one day.
+#
+# Rules are deliberately non-overlapping. Cloudflare applies every matching
+# rule, and two rules that both set `Cache-Control` on one file would append
+# rather than replace.
+
+# --- content-hashed, safe to cache forever -------------------------------
+
+# Next's build output. Every filename carries a chunk or build hash.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The subsetted webfonts. `scripts/build-fonts.py` puts the sha256 of the file
+# in its own filename and `pnpm test` fails if a file stops matching its hash,
+# so these URLs are immutable by construction. The two OFL licence files sit in
+# the same directory and are versioned with the fonts they cover.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# --- not content-hashed: cached, but replaceable within a day ------------
+
+# Photographs and the share card. Same filename survives a re-encode.
+/images/*
+  Cache-Control: public, max-age=86400
+
+/opengraph-image.png
+  Cache-Control: public, max-age=86400
+
+# Brand marks. Small, stable, but still name-addressed rather than hashed.
+/favicon.ico
+  Cache-Control: public, max-age=86400
+
+/logo.svg
+  Cache-Control: public, max-age=86400
+
+/logo-dark.svg
+  Cache-Control: public, max-age=86400
+
+/logo-mark.svg
+  Cache-Control: public, max-age=86400
+
+/logo-mark-dark.svg
+  Cache-Control: public, max-age=86400
+
+/logo.png
+  Cache-Control: public, max-age=86400
+
+/logo-dark.png
+  Cache-Control: public, max-age=86400

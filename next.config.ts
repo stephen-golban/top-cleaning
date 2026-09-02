@@ -149,14 +149,18 @@ const wwwToApex = [
  * no upgrade, no HSTS. Every form post, including the quote form, was one
  * hostile network away from being read in transit.
  *
- * **Why this is in the app and not the "Always Use HTTPS" zone toggle.** That
- * toggle is the textbook answer and it is still worth turning on (see
- * `.agents/DEPLOY.md`), but the deploying OAuth token has zone *read* only:
- * `PATCH /zones/{id}/settings/always_use_https` returns `10000 Authentication
- * error`, and so does the matching GET. Doing it here has the same advantages
- * the `wwwToApex` fold has — it is version-controlled, it travels with the
- * Worker, and it cannot be silently undone by someone flipping a dashboard
- * switch. The two are complementary, not alternatives.
+ * **This is in the app *as well as* the zone toggle, not instead of it.** When
+ * this was written the deploying OAuth token had zone *read* only, so
+ * `PATCH /zones/{id}/settings/always_use_https` answered `10000 Authentication
+ * error` and the application was the only place the upgrade could live. The
+ * zone toggle is **on** as of 2026-09-02, set with a token that carries Zone
+ * Settings: Edit, and cleartext now gets a `301` from Cloudflare's edge before
+ * the Worker is ever invoked. These rules stay anyway, and deleting them would
+ * be a mistake: they are the version-controlled half, they survive somebody
+ * flipping the dashboard switch back, and — unlike the edge rule — they are
+ * paired with the `headers()` block below that actually ships HSTS. The two
+ * layers are complementary; only the edge one reaches static assets and
+ * Cloudflare's managed `/robots.txt`, and only this one is in git.
  *
  * **Why `redirects()` and not `src/middleware.ts`.** Next runs
  * `headers` → `redirects` → middleware, so a redirect here fires before
@@ -295,12 +299,12 @@ const nextConfig: NextConfig = {
       // Every filename under /fonts carries a content hash, so the bytes behind
       // a URL never change and the response can be cached forever.
       //
-      // This applies on the Node runtime (`next start`). On Cloudflare it does
-      // not: the ASSETS binding answers `/fonts/*` before the Worker runs, and
-      // it sets `public, max-age=0, must-revalidate` on *every* static asset —
-      // `/images/*` and `/_next/static/*` included, and `next/font`'s own files
-      // before this migration. Overriding that is a `public/_headers` file and
-      // a site-wide caching decision; see `.agents/FOLLOWUPS.md`.
+      // This applies on the Node runtime (`next start`) only. On Cloudflare the
+      // ASSETS binding answers `/fonts/*` before the Worker runs, so this rule
+      // never sees the request; `public/_headers` is the file that governs
+      // there, and it covers `/_next/static/*` and `/images/*` too. The two are
+      // kept in step by hand — there is no shared source — so if you change the
+      // policy for a path here, change it there as well.
       {
         source: "/fonts/:path*.woff2",
         headers: [
